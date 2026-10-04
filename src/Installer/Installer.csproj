@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>AlyxMP-Setup</AssemblyName>
+    <RootNamespace>AlyxMP</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\assets\alyxmp.ico</ApplicationIcon>
+    <Version>0.4.0</Version>
+    <Product>Alyx Multiplayer</Product>
+    <Description>Alyx Multiplayer setup</Description>
+    <Copyright>Fan-made mod, not affiliated with Valve</Copyright>
+    <Prefer32Bit>false</Prefer32Bit>
+    <!-- the launcher exe is built first by build.ps1 and embedded below -->
+    <LauncherExe>..\..\build\launcher\AlyxMP.exe</LauncherExe>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Common\*.cs" Link="Common\%(Filename)%(Extension)" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\mod\game\**\*.lua" LogicalName="payload/game/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(LauncherExe)" LogicalName="payload/launcher/AlyxMP.exe" />
+  </ItemGroup>
+
+  <Target Name="CheckLauncherBuilt" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(LauncherExe)')" Text="Build the launcher first (run build.ps1)." />
+  </Target>
+
+</Project>

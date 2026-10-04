@@ -1,0 +1,12 @@
+# build output (build.ps1 rebuilds these; installers go up as releases)
+build/
+dist/
+bin/
+obj/
+
+# editors / tools
+.vs/
+*.user
+*.suo
+__pycache__/
+*.pyc
