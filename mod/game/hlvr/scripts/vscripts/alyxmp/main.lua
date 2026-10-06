@@ -15,7 +15,7 @@
 
 AMP = AMP or {}
 local A = AMP
-A.VERSION = "0.5.0"
+A.VERSION = "0.5.1"
 A.PROTO = 3
 
 local MODEL_ALYX = "models/characters/alyx/alyx.vmdl"
@@ -522,11 +522,23 @@ local FLASHLIGHT_KV = {
 }
 
 -- an invisible target at the avatar's chest: enemies in this game go after the other players too
-local function updateTarget(pp, pos, eyeh)
-    local at = pos + Vector(0, 0, math.max(eyeh, 30) * 0.7)
+-- Players never collide with each other. The bullseye's "not solid" flag doesn't keep it out of
+-- player-sized traces, though, and NoVR's unstuck check would take a player standing against the avatar
+-- for stuck and teleport them away (often through a wall). So while we're close to the avatar, its target
+-- floats well above our heads; enemies near both of us go for us anyway.
+local TARGET_CLEAR = 64     -- closer than this (sideways) and the target gets out of the way...
+local TARGET_BACK = 88      -- ...and it comes back down once we're this far again
+local TARGET_LIFT = 150     -- above the avatar's feet: over any standing (or jumping) player's head
+
+local function updateTarget(pp, pos, eyeh, p)
+    if p then
+        local d = p:GetOrigin() - pos
+        local side = math.sqrt(d.x * d.x + d.y * d.y)
+        pp.targetLifted = math.abs(d.z) < 120 and side < (pp.targetLifted and TARGET_BACK or TARGET_CLEAR)
+    end
+    local at = pos + Vector(0, 0, pp.targetLifted and TARGET_LIFT or math.max(eyeh, 30) * 0.7)
     if not (pp.target and IsValidEntity(pp.target)) then
-        -- not solid, so shots and bodies pass through; it has to be damageable though, or no enemy
-        -- counts it as one (so it gets a lot of health instead)
+        -- it has to be damageable, or no enemy counts it as one (so it gets a lot of health instead)
         pp.target = SpawnEntityFromTableSynchronous("npc_bullseye", {
             targetname = TARGET_NAME, origin = vecStr(at), health = 999999, minangle = "360", spawnflags = 65536,
         })
@@ -697,7 +709,7 @@ local function updatePuppet(pp, now, dt)
     end
     setPlayback(pp, pp.rig, seq)
     updateFlashlight(pp, pos, yaw, pitch, eyeh, bit(flags, 8))
-    updateTarget(pp, pos, eyeh)
+    updateTarget(pp, pos, eyeh, Entities:GetLocalPlayer())
     drawTag(pp, pos, eyeh, Entities:GetLocalPlayer())
 end
 
