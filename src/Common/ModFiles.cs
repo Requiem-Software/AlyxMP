@@ -13,7 +13,7 @@ namespace AlyxMP
     /// </summary>
     static class ModFiles
     {
-        public const string Version = "0.5.3";
+        public const string Version = "0.6.0";
         public const string HookLine = "script_reload_code alyxmp/main";
         public const string NoVRHookLine = "script_reload_code novr";
         public const string NoVRZipUrl = "https://github.com/HLANoVR/HLA-NoVR/archive/refs/heads/main.zip";

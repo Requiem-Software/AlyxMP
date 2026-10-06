@@ -14,7 +14,7 @@
 
 AMP = AMP or {}
 local A = AMP
-A.VERSION = "0.5.3"
+A.VERSION = "0.6.0"
 A.PROTO = 3
 
 local MODEL_ALYX = "models/characters/alyx/alyx.vmdl"
