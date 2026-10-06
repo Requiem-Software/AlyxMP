@@ -15,7 +15,7 @@
 
 AMP = AMP or {}
 local A = AMP
-A.VERSION = "0.5.2"
+A.VERSION = "0.5.3"
 A.PROTO = 3
 
 local MODEL_ALYX = "models/characters/alyx/alyx.vmdl"
@@ -976,10 +976,189 @@ end
 -- console alias its fire button runs. NoVR resets the alias on every level load; keep re-applying it.
 local NOVR_FIRE_ALIAS = "+iv_attack;usemultitool"
 
-local function hookNoVRFire(now)
+local function hookNoVRFire(now, p)
     if IS_VR or not Viewmodels_UpgradeModel or now < (A.nextFireHook or 0) then return end
     A.nextFireHook = now + 3
     SendToConsole("alias +customattack \"" .. NOVR_FIRE_ALIAS .. ";amp_trigger\"")
+    -- the right mouse button also turns what you're carrying (see below); NoVR rebinds its keys on every
+    -- level load and binds them to "load autosave" when you die, so leave it alone while dead
+    if p:GetHealth() > 0 then
+        SendToConsole("bind " .. (rawget(_G, "SECONDARY_ATTACK") or "MOUSE2") .. " +amp_turn")
+    end
+end
+
+---------------------------------------------------------------------------------------------------
+-- turning what you carry (NoVR), like in Garry's Mod: hold the right mouse button and move the mouse.
+-- The game's carry can't turn things, and it lines them up straight with your view whenever it picks
+-- them up, so once you turn something we carry it ourselves: it's pushed (with physics, so it still
+-- bumps into things) to the same spot in front of you, at the angle you gave it, until you press E.
+-- While the button is down mouse look is slowed to a thousandth: its tiny movements turn the object,
+-- and the camera is put back each time it drifts a hundredth of a degree, so it stays put.
+
+local TURN_SENS_DIV = 1000      -- mouse look slowed down this much while turning...
+local TURN_GAIN = 1.0           -- ...and an object degree per degree the view would have turned
+local TURN_RECENTER = 0.01      -- the camera is put back once it drifted this far (degrees)
+local TURN_TAG = 0.01           -- roll that marks each putting back (see updateTurning)
+local CARRY_TAU = 0.05          -- seconds to close the gap to where it should be
+local CARRY_MAX_SPEED = 1500
+local CARRY_LOSE = 60           -- this far off (stuck behind something) for CARRY_LOSE_TIME: let go
+local CARRY_LOSE_TIME = 0.5
+local CARRY_CLASSES = { prop_physics = true, prop_physics_override = true, prop_physics_multiplayer = true,
+    prop_physics_interactive = true }
+
+local function axes(a)          -- forward, right, up of an angle (Source's conventions)
+    local sp, cp = math.sin(math.rad(a.x)), math.cos(math.rad(a.x))
+    local sy, cy = math.sin(math.rad(a.y)), math.cos(math.rad(a.y))
+    local sr, cr = math.sin(math.rad(a.z)), math.cos(math.rad(a.z))
+    return Vector(cp * cy, cp * sy, -sp),
+        Vector(-sr * sp * cy + cr * sy, -sr * sp * sy - cr * cy, -sr * cp),
+        Vector(cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp)
+end
+
+local function anglesOf(f, u)
+    local pitch = math.deg(math.asin(math.max(-1, math.min(1, -f.z))))
+    local yaw = math.deg(atan2(f.y, f.x))
+    local sp, cp = math.sin(math.rad(pitch)), math.cos(math.rad(pitch))
+    local sy, cy = math.sin(math.rad(yaw)), math.cos(math.rad(yaw))
+    local roll = math.deg(atan2(u:Dot(Vector(sy, -cy, 0)), u:Dot(Vector(sp * cy, sp * sy, cp))))
+    return pitch, yaw, roll
+end
+
+local function rotate(v, k, deg)    -- v turned around the unit axis k (Rodrigues)
+    local t = math.rad(deg)
+    local c, s = math.cos(t), math.sin(t)
+    return v * c + k:Cross(v) * s + k * (k:Dot(v) * (1 - c))
+end
+
+local function toBasis(v, f, r, u) return Vector(v:Dot(f), v:Dot(r), v:Dot(u)) end
+local function fromBasis(v, f, r, u) return f * v.x + r * v.y + u * v.z end
+local function interactKey() return rawget(_G, "INTERACT") or "E" end
+
+-- what the game itself carries for you
+local function gameCarried(p)
+    for _, e in ipairs(Entities:FindAllInSphere(p:GetOrigin(), 200)) do
+        if e:Attribute_GetIntValue("picked_up", 0) == 1 and CARRY_CLASSES[e:GetClassname()] then return e end
+    end
+    return nil
+end
+
+local function stopTurning()
+    local c = A.carry
+    if not c or not c.turning then return end
+    c.turning = false
+    SendToConsole("mouse_pitchyaw_sensitivity " .. c.sens)
+    SendToConsole(string.format("setang_exact %.6f %.6f 0", c.view.x, c.view.y))
+end
+
+local function dropCarry(alive)
+    local c = A.carry
+    if not c then return end
+    stopTurning()
+    A.carry = nil
+    -- (NoVR rebinds every key itself when you die)
+    if alive then SendToConsole("bind " .. interactKey() .. " +useextra") end
+    if IsValidEntity(c.ent) then c.ent:Attribute_SetIntValue("picked_up", 0) end
+    -- the gun comes back, as when the game drops something
+    local hh = Convars:GetInt("hidehud")
+    if hh ~= 96 and hh ~= 1 and hh ~= 67 then SendToConsole("r_drawviewmodel 1") end
+end
+
+local function takeCarry(p, e)
+    local eye, view = p:EyePosition(), p:EyeAngles()
+    local vf, vr, vu = axes(view)
+    local yf, yr, yu = axes(QAngle(0, view.y, 0))
+    local of, _, ou = axes(e:GetAngles())
+    A.carry = {
+        ent = e,
+        -- where it is in front of you, and its angle relative to the way you face (it turns with you,
+        -- but not when you look up or down, like with the game's carry)
+        off = toBasis(e:GetCenter() - eye, vf, vr, vu),
+        f = toBasis(of, yf, yr, yu), u = toBasis(ou, yf, yr, yu),
+    }
+    DoEntFireByInstanceHandle(p, "ForceDropPhysObjects", "", 0, nil, nil)
+    -- E lets go of it (the game's E would grab it again, straightened)
+    SendToConsole("bind " .. interactKey() .. " amp_carry_drop")
+end
+
+local function startTurning(p)
+    local c = A.carry
+    if c.turning then return end
+    -- (Convars can't read this one; NoVR keeps the value it sets in MOUSE_SENSITIVITY)
+    local sens = Convars:GetFloat("mouse_pitchyaw_sensitivity") or rawget(_G, "MOUSE_SENSITIVITY") or 50
+    local view = p:EyeAngles()
+    c.turning, c.sens, c.view, c.last, c.tag, c.pending = true, sens, QAngle(view.x, view.y, 0), view, view.z, nil
+    SendToConsole("mouse_pitchyaw_sensitivity " .. sens / TURN_SENS_DIV)
+end
+
+-- How far the mouse turned the camera since last tick, in degrees (yaw, pitch); the camera is put back
+-- meanwhile. Putting it back (setang_exact) lands a tick or two later, so each one also sets a different
+-- hint of roll, too little to see: the mouse never rolls the camera, so seeing that roll tells it has
+-- landed, and from then on the camera moved from where it was put back to.
+local function updateTurning(c, view, now)
+    local from = c.last
+    if c.pending and math.abs(angleDiff(view.z, c.pending)) < TURN_TAG / 4 then
+        from = c.view
+        c.tag, c.pending = c.pending, nil
+    end
+    c.last = view
+    local dyaw, dpitch = angleDiff(view.y, from.y), view.x - from.x
+    if math.max(math.abs(angleDiff(view.y, c.view.y)), math.abs(view.x - c.view.x)) > TURN_RECENTER
+        and (not c.pending or now - c.pendingAt > 0.5) then
+        if not c.pending then c.pending = math.abs(angleDiff(c.tag, TURN_TAG)) < TURN_TAG / 4 and 2 * TURN_TAG or TURN_TAG end
+        c.pendingAt = now
+        SendToConsole(string.format("setang_exact %.6f %.6f %.4f", c.view.x, c.view.y, c.pending))
+    end
+    return dyaw, dpitch
+end
+
+local function updateCarry(p, now)
+    local c = A.carry
+    if not c then return end
+    local e = c.ent
+    if not IsValidEntity(e) or p:GetHealth() <= 0 then
+        dropCarry(p:GetHealth() > 0)
+        return
+    end
+    local view = p:EyeAngles()
+    local yf, yr, yu = axes(QAngle(0, view.y, 0))
+    if c.turning then
+        local dyaw, dpitch = updateTurning(c, view, now)
+        dyaw, dpitch = dyaw * TURN_SENS_DIV * TURN_GAIN, dpitch * TURN_SENS_DIV * TURN_GAIN
+        if dyaw ~= 0 or dpitch ~= 0 then
+            -- left/right turns it around your view's up axis, up/down tips it toward or away from you
+            local _, right, up = axes(c.view)
+            local f, u = fromBasis(c.f, yf, yr, yu), fromBasis(c.u, yf, yr, yu)
+            f, u = rotate(f, up, dyaw), rotate(u, up, dyaw)
+            f, u = rotate(f, right, -dpitch), rotate(u, right, -dpitch)
+            c.f, c.u = toBasis(f, yf, yr, yu), toBasis(u, yf, yr, yu)
+        end
+    end
+    local vf, vr, vu = axes(view)
+    local center = e:GetCenter()
+    local gap = p:EyePosition() + fromBasis(c.off, vf, vr, vu) - center
+    if gap:Length() > CARRY_LOSE then
+        c.lostAt = c.lostAt or now
+        if now - c.lostAt > CARRY_LOSE_TIME then
+            dropCarry(true)
+            return
+        end
+    else
+        c.lostAt = nil
+    end
+    -- its angle is set outright (around its middle); where it is, it's pushed to
+    local pitch, yaw, roll = anglesOf(fromBasis(c.f, yf, yr, yu), fromBasis(c.u, yf, yr, yu))
+    e:SetAngles(pitch, yaw, roll)
+    local shift = e:GetCenter() - center
+    if shift:Length() > 0.01 then e:SetAbsOrigin(e:GetOrigin() - shift) end
+    SetPhysAngularVelocity(e, Vector(0, 0, 0))
+    local v = gap * (1 / CARRY_TAU)
+    local speed = v:Length()
+    if speed > CARRY_MAX_SPEED then v = v * (CARRY_MAX_SPEED / speed) end
+    v = v + p:GetVelocity() + Vector(0, 0, (Convars:GetFloat("sv_gravity") or 500) * FrameTime())
+    e:ApplyAbsVelocityImpulse(v - GetPhysVelocity(e))
+    -- NoVR still counts it as carried (no aiming down sights meanwhile), and the hands stay empty
+    if e:Attribute_GetIntValue("picked_up", 0) ~= 1 then e:Attribute_SetIntValue("picked_up", 1) end
+    if Convars:GetInt("r_drawviewmodel") ~= 0 then SendToConsole("r_drawviewmodel 0") end
 end
 
 local function watchViewModelShots(now)
@@ -1204,8 +1383,39 @@ reg("amp_hold", function(on, ...)
     centerText(y + px(58), sub, px(22), false, DIM, 230, 0.6)
 end)
 
+-- the right mouse button (NoVR, see hookNoVRFire): turns what you carry (unless that's switched off in
+-- the settings menu); otherwise it does what it always did (aim down sights...)
+reg("+amp_turn", function()
+    local p = Entities:GetLocalPlayer()
+    if not IS_VR and p and p:GetHealth() > 0 and shown("turn") then
+        if not A.carry then
+            local e = gameCarried(p)
+            if e then takeCarry(p, e) end
+        end
+        if A.carry then
+            startTurning(p)
+            return
+        end
+    end
+    A.m2Passed = true
+    SendToConsole("+customattack2")
+end)
+reg("-amp_turn", function()
+    if A.m2Passed then
+        A.m2Passed = nil
+        SendToConsole("-customattack2")
+    end
+    stopTurning()
+end)
+reg("amp_carry_drop", function()
+    local p = Entities:GetLocalPlayer()
+    dropCarry(p ~= nil and p:GetHealth() > 0)
+end)
+
 -- the launcher is about to load a save or a level
 reg("amp_unload", function()
+    local p = Entities:GetLocalPlayer()
+    dropCarry(p ~= nil and p:GetHealth() > 0)
     A.HideOverlays()
 end)
 
@@ -1268,7 +1478,8 @@ local function tick()
     lastTick = now
     local p = Entities:GetLocalPlayer()
     if p then
-        hookNoVRFire(now)
+        hookNoVRFire(now, p)
+        updateCarry(p, now)
         watchViewModelShots(now)
         updateHint(now, p)
         if A.World then

@@ -24,9 +24,11 @@ namespace AlyxMP
         CancellationTokenSource cancel;
         bool busy;
         bool installed;
+        readonly bool update;
 
-        public InstallerForm(string presetDir, bool? presetNoVR, bool autoInstall = false, bool shortcut = true)
+        public InstallerForm(string presetDir, bool? presetNoVR, bool autoInstall = false, bool shortcut = true, bool update = false)
         {
+            this.update = update;
             Text = "Alyx Multiplayer Setup";
             Theme.Apply(this);
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -128,7 +130,7 @@ namespace AlyxMP
                 try
                 {
                     Process.Start(new ProcessStartInfo(Application.ExecutablePath,
-                        $"--dir \"{dir}\" {(novrCheck.Checked ? "--novr" : "--no-novr")} {(shortcutCheck.Checked ? "" : "--no-shortcut")} --auto") { Verb = "runas", UseShellExecute = true });
+                        $"--dir \"{dir}\" {(novrCheck.Checked ? "--novr" : "--no-novr")} {(shortcutCheck.Checked ? "" : "--no-shortcut")} --auto{(update ? " --update" : "")}") { Verb = "runas", UseShellExecute = true });
                     Close();
                 }
                 catch (Exception) { }
@@ -154,6 +156,8 @@ namespace AlyxMP
                 installed = true;
                 installButton.Text = "PLAY - OPEN ALYX MULTIPLAYER";
                 installButton.Enabled = true;
+                // updating from the launcher: straight back to it
+                if (update) OnInstallClicked();
             });
         }
 

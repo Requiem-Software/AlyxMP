@@ -23,6 +23,7 @@ needs to open TCP port 27420 on their router, or you can all use a VPN like Tail
 
 - **Y** to chat, **F10** for settings.
 - A dot in your crosshair means you can use what you're looking at.
+- Carrying something? Hold the **right mouse button** and move the mouse to turn it. **E** drops it.
 - You see each other as Alyx, with your names above your heads.
 - Doors, puzzles, items, enemies and story moments are shared, so you're always in the same world.
 - To move on to the next level, everyone has to stand in the loading zone at the exit.
@@ -35,6 +36,8 @@ needs to open TCP port 27420 on their router, or you can all use a VPN like Tail
   with the same health, and they die for everyone at once.
 - Alyx MP adds a few small things to NoVR: a Half-Life 2 style HUD, auto reload and one line in its
   interaction script. Uninstalling removes them.
+- The launcher tells you when there's a new version: click **Update** at the top, or tick
+  **Update automatically** under *update log*.
 - To uninstall, run `AlyxMP-Setup.exe` again and click **Uninstall**. Your saves stay where they are.
 
 ## Build it yourself

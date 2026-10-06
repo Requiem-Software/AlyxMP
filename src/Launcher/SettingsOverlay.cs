@@ -25,7 +25,7 @@ namespace AlyxMP
         readonly bool novrAvailable;
         int selected = -1, hover = -1;
 
-        const int W = 540, Head = 104, RowH = 66, Foot = 58, Pad = 36;
+        const int W = 540, Head = 104, RowH = 60, Foot = 58, Pad = 36;
 
         public SettingsOverlay(Settings settings, bool novrAvailable, Action<string> changed)
             : base(0xA18, Keys.F10, () => true)
@@ -44,6 +44,8 @@ namespace AlyxMP
                 () => settings.NameTags, v => settings.NameTags = v);
             Add("Interaction dot", "A dot in the crosshair when E would do something",
                 () => settings.InteractDot, v => settings.InteractDot = v, novr: true);
+            Add("Turn carried objects", "Hold right-click while carrying something and move the mouse",
+                () => settings.TurnCarried, v => settings.TurnCarried = v, novr: true);
             Add("Player list", "Who's playing and how far away they are, top left",
                 () => settings.PlayerList, v => settings.PlayerList = v);
             Add("Chat messages", "Chat and session messages on the left of the screen",
@@ -148,14 +150,14 @@ namespace AlyxMP
 
                 var label = usable ? HlaUi.Text : HlaUi.Dim;
                 HlaUi.Draw(g, it.Label, Theme.Px(21), HlaUi.Semibold, label,
-                    new Rectangle(m, row.Top + Theme.Px(10), w - 2 * m - Theme.Px(70), Theme.Px(26)));
+                    new Rectangle(m, row.Top + Theme.Px(7), w - 2 * m - Theme.Px(70), Theme.Px(26)));
                 var help = !usable ? "Only without a VR headset (NoVR)" : it.Help;
                 HlaUi.Draw(g, help, Theme.Px(15), HlaUi.Regular, HlaUi.Dim,
-                    new Rectangle(m, row.Top + Theme.Px(36), w - 2 * m - Theme.Px(70), Theme.Px(20)));
+                    new Rectangle(m, row.Top + Theme.Px(33), w - 2 * m - Theme.Px(70), Theme.Px(20)));
                 if (it.NeedsRestart && usable)
                 {
                     var tag = new Rectangle(m + HlaUi.Measure(g, it.Label, Theme.Px(21), HlaUi.Semibold).Width + Theme.Px(10),
-                        row.Top + Theme.Px(14), Theme.Px(120), Theme.Px(18));
+                        row.Top + Theme.Px(11), Theme.Px(120), Theme.Px(18));
                     HlaUi.Draw(g, "RESTART", Theme.Px(12), HlaUi.Semibold, HlaUi.Accent, tag, HlaUi.AlignLeft, Theme.Px(1));
                 }
                 int tw = Theme.Px(46), th = Theme.Px(24);

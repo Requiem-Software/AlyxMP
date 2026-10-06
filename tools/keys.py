@@ -40,6 +40,18 @@ def focus(hwnd):
 
 
 def press(name, hold=0.08):
+    up = name.upper()
+    # M2DOWN / M2UP hold the right button; MOVE:dx:dy moves the mouse (relative, like a real mouse)
+    if up == "M2DOWN":
+        user32.mouse_event(0x0008, 0, 0, 0, 0)
+        return
+    if up == "M2UP":
+        user32.mouse_event(0x0010, 0, 0, 0, 0)
+        return
+    if up.startswith("MOVE:"):
+        _, dx, dy = name.split(":")
+        user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
+        return
     if name.upper() == "MOUSE1":
         user32.mouse_event(0x0002, 0, 0, 0, 0)
         time.sleep(hold)
@@ -54,16 +66,19 @@ def press(name, hold=0.08):
 
 if __name__ == "__main__":
     hold = 0.08
+    gap = 0.2
     keys = []
     args = sys.argv[1:]
     while args:
         a = args.pop(0)
         if a == "--hold":
             hold = float(args.pop(0))
+        elif a == "--gap":
+            gap = float(args.pop(0))
         else:
             keys.append(a)
     h = find_game()
     print("focused" if h and focus(h) else "could not focus the game")
     for k in keys:
         press(k, hold)
-        time.sleep(0.2)
+        time.sleep(gap)

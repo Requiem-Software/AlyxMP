@@ -13,7 +13,7 @@ namespace AlyxMP
     /// </summary>
     static class ModFiles
     {
-        public const string Version = "0.5.2";
+        public const string Version = "0.5.3";
         public const string HookLine = "script_reload_code alyxmp/main";
         public const string NoVRHookLine = "script_reload_code novr";
         public const string NoVRZipUrl = "https://github.com/HLANoVR/HLA-NoVR/archive/refs/heads/main.zip";
@@ -154,7 +154,7 @@ namespace AlyxMP
             {
                 var data = novr.Read($"scripts/{gun}.txt");
                 if (data == null) continue;
-                var text = Encoding.UTF8.GetString(data).TrimStart('﻿');
+                var text = Encoding.UTF8.GetString(data).TrimStart('\uFEFF');
                 text = Regex.Replace(text, @"(""item_flags""\s+"")(\d+)("")",
                     m => m.Groups[1].Value + (int.Parse(m.Groups[2].Value) & ~2) + m.Groups[3].Value);
                 files[$"scripts/{gun}.txt"] = Encoding.UTF8.GetBytes(text);

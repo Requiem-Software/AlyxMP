@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Net;
@@ -39,6 +40,10 @@ namespace AlyxMP
         readonly Label modStatus = Theme.Label("", Theme.UiBold);
         readonly Label sessionStatus = Theme.Label("", Theme.UiBold);
         readonly Timer refresh = new Timer { Interval = 500 };
+        readonly Panel updateBanner = new Panel { Visible = false };
+        readonly Label updateLabel = Theme.Label("", Theme.UiBold, Theme.Accent);
+        readonly Button updateButton = Theme.Button("UPDATE", true);
+        readonly LinkLabel updatesLink = new LinkLabel { Text = "update log", AutoSize = true };
 
         readonly StartupAction startup;
         readonly ChatOverlay chatOverlay;
@@ -46,6 +51,14 @@ namespace AlyxMP
         int mappedPort;
         string shareAddress;
         bool suppressAutoLaunch;
+
+        // updates (Updater)
+        List<Release> releases = new List<Release>();
+        Release newer;
+        string updateError;
+        bool checking, updating;
+        Version autoTried;
+        DateTime nextUpdateCheck;
 
         public MainForm(string hla, Settings settings, GameLink game, StartupAction startup)
         {
@@ -87,7 +100,11 @@ namespace AlyxMP
                 novrCheck.Text = "Play without a VR headset (NoVR isn't installed)";
             }
             RefreshState();
-            Shown += (s, e) => RunStartupAction();
+            Shown += (s, e) =>
+            {
+                RunStartupAction();
+                CheckForUpdates(null);
+            };
         }
 
         /// <summary>A switch in the in-game settings menu (F10) was flipped.</summary>
@@ -137,6 +154,27 @@ namespace AlyxMP
             title.Location = new Point(18, 10);
             var version = Theme.Label("v" + ModFiles.Version, Theme.Ui, Theme.Muted);
             version.Location = new Point(400, 32);
+            updatesLink.Location = new Point(452, 32);
+            StyleLink(updatesLink);
+            updatesLink.LinkClicked += (s, e) => ShowUpdates();
+            Controls.Add(updatesLink);
+
+            // shown when a newer version is out
+            updateBanner.SetBounds(560, 8, 320, 44);
+            updateBanner.BackColor = Color.FromArgb(62, 46, 16);
+            updateBanner.Paint += (s, e) =>
+            {
+                using (var pen = new Pen(Theme.AccentDim))
+                    e.Graphics.DrawRectangle(pen, 0, 0, updateBanner.Width - 1, updateBanner.Height - 1);
+            };
+            updateLabel.Location = new Point(10, 6);
+            var whatsNew = new LinkLabel { Text = "what's new", AutoSize = true, Location = new Point(10, 24) };
+            StyleLink(whatsNew);
+            whatsNew.LinkClicked += (s, e) => ShowUpdates();
+            updateButton.SetBounds(216, 7, 94, 30);
+            updateButton.Click += (s, e) => StartUpdate(false);
+            updateBanner.Controls.AddRange(new Control[] { updateLabel, whatsNew, updateButton });
+            Controls.Add(updateBanner);
             gameStatus.Location = new Point(22, 58);
             modStatus.Location = new Point(300, 58);
             sessionStatus.Location = new Point(520, 58);
@@ -164,9 +202,7 @@ namespace AlyxMP
             copyButton.Visible = false;
             copyButton.Click += (s, e) => { if (shareAddress != null) Clipboard.SetText(shareAddress); };
             publicIpLink.Location = new Point(14, 157);
-            publicIpLink.LinkColor = Theme.Accent;
-            publicIpLink.ActiveLinkColor = Theme.Text;
-            publicIpLink.BackColor = Color.Transparent;
+            StyleLink(publicIpLink);
             publicIpLink.Visible = false;
             publicIpLink.LinkClicked += (s, e) => ShowPublicIp();
             host.Controls.AddRange(new Control[] { portLabel, portBox, pwLabel, hostPwBox, upnpCheck, hostButton, shareLabel, copyButton, publicIpLink });
@@ -246,6 +282,13 @@ namespace AlyxMP
             logBox.SetBounds(10, 26, 410, 134);
             log.Controls.Add(logBox);
             Controls.Add(log);
+        }
+
+        static void StyleLink(LinkLabel link)
+        {
+            link.LinkColor = Theme.Accent;
+            link.ActiveLinkColor = Theme.Text;
+            link.BackColor = Color.Transparent;
         }
 
         void LoadSettings()
@@ -442,6 +485,111 @@ namespace AlyxMP
             chatInput.Clear();
         }
 
+        // ------------------------------------------------------------------ updates
+
+        /// <summary>Asks GitHub for the versions out there (in the background), then runs <paramref name="then"/>.</summary>
+        void CheckForUpdates(Action then)
+        {
+            if (checking) return;
+            checking = true;
+            nextUpdateCheck = DateTime.UtcNow.AddMinutes(30);
+            Task.Run(() =>
+            {
+                List<Release> list = null;
+                string error = null;
+                try { list = Updater.FetchReleases(); }
+                catch (Exception e) { error = e.Message; }
+                Ui(() =>
+                {
+                    checking = false;
+                    if (list != null)
+                    {
+                        releases = list;
+                        updateError = null;
+                        var found = Updater.Newer(list);
+                        if (found != null && (newer == null || found.Version != newer.Version))
+                            AddLog($"Alyx MP v{found.Version} is out." + (settings.AutoUpdate
+                                ? " It installs by itself once the game is closed and you're not in a session."
+                                : " Press Update at the top to install it."), Theme.Accent);
+                        newer = found;
+                    }
+                    else updateError = error;
+                    ShowUpdateBanner();
+                    then?.Invoke();
+                });
+            });
+        }
+
+        void ShowUpdateBanner()
+        {
+            updateBanner.Visible = newer != null;
+            if (newer == null || updating) return;
+            updateLabel.Text = "UPDATE AVAILABLE: v" + newer.Version;
+            updateButton.Enabled = true;
+        }
+
+        void ShowUpdates()
+        {
+            if (releases.Count == 0 && !checking)
+            {
+                // nothing fetched yet (offline at startup?): try now, then show it
+                updatesLink.Enabled = false;
+                CheckForUpdates(() =>
+                {
+                    updatesLink.Enabled = true;
+                    ShowUpdates();
+                });
+                return;
+            }
+            using (var f = new UpdatesForm(settings, releases, newer, updateError, () => StartUpdate(false)))
+                f.ShowDialog(this);
+        }
+
+        /// <summary>Automatic updates: install the new version when nothing is going on.</summary>
+        void MaybeAutoUpdate(bool gameRunning)
+        {
+            if (!settings.AutoUpdate || newer == null || updating || gameRunning || session.Active) return;
+            if (autoTried == newer.Version) return;   // once per version (it failed, or setup was closed)
+            autoTried = newer.Version;
+            StartUpdate(true);
+        }
+
+        async void StartUpdate(bool auto)
+        {
+            var r = newer;
+            if (r == null || updating) return;
+            if (GamePaths.GameRunning())
+            {
+                AddLog("Close Half-Life: Alyx first, then press Update.", Theme.Bad);
+                return;
+            }
+            if (session.Active && !auto && MessageBox.Show(this,
+                    "Updating restarts the launcher, which ends your session. Update now?", "Alyx Multiplayer",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+            updating = true;
+            updateButton.Enabled = false;
+            updateLabel.Text = $"DOWNLOADING v{r.Version}...";
+            AddLog($"Downloading Alyx MP v{r.Version}...", Theme.Muted);
+            try
+            {
+                var setup = await Updater.Download(r, pct => Ui(() =>
+                {
+                    if (updating) updateLabel.Text = $"DOWNLOADING v{r.Version}   {pct}%";
+                }));
+                AddLog("Installing the update. The launcher opens again when it's done.", Theme.Good);
+                Updater.StartSetup(setup, hla);
+                Close();
+            }
+            catch (Exception e)
+            {
+                updating = false;
+                AddLog("Couldn't update: " + e.Message, Theme.Bad);
+                updateLabel.Text = "UPDATE FAILED - TRY AGAIN";
+                updateButton.Enabled = true;
+            }
+        }
+
         // ------------------------------------------------------------------ status
 
         void RefreshState()
@@ -466,6 +614,9 @@ namespace AlyxMP
             resyncButton.Text = session.IsHost ? "SEND MY WORLD TO ALL" : "RESYNC MY WORLD";
             launchButton.Enabled = !running;
             launchButton.Text = running ? "GAME IS RUNNING" : "LAUNCH HALF-LIFE: ALYX";
+
+            if (nextUpdateCheck != default(DateTime) && DateTime.UtcNow > nextUpdateCheck) CheckForUpdates(null);
+            MaybeAutoUpdate(running);
 
             var rows = session.Players;
             if (playerList.Items.Count != rows.Count || rows.Where((p, i) => !SameRow(playerList.Items[i], p)).Any())

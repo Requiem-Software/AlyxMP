@@ -19,12 +19,14 @@ namespace AlyxMP
         public int VConPort = 29000;
         public string ExtraArgs = "";
         public string GameDir = "";
+        public bool AutoUpdate;             // install new versions by themselves (Updater)
 
         // in-game settings menu (F10)
         public bool AutoReload = true;      // NoVR: guns reload by themselves when the magazine runs dry
         public bool Hl2Hud = true;          // NoVR: Half-Life 2's HUD instead of NoVR's own
         public bool NameTags = true;
         public bool InteractDot = true;
+        public bool TurnCarried = true;     // NoVR: hold the right mouse button to turn what you carry
         public bool PlayerList = true;
         public bool ChatFeed = true;
         public bool ZoneOutlines = true;
@@ -51,10 +53,12 @@ namespace AlyxMP
                 if (d.TryGetValue("vconport", out v) && int.TryParse(v, out var vp)) s.VConPort = vp;
                 if (d.TryGetValue("extra", out v)) s.ExtraArgs = v;
                 if (d.TryGetValue("gamedir", out v)) s.GameDir = v;
+                if (d.TryGetValue("autoupdate", out v)) s.AutoUpdate = v == "1";
                 if (d.TryGetValue("autoreload", out v)) s.AutoReload = v == "1";
                 if (d.TryGetValue("hl2hud", out v)) s.Hl2Hud = v == "1";
                 if (d.TryGetValue("nametags", out v)) s.NameTags = v == "1";
                 if (d.TryGetValue("interactdot", out v)) s.InteractDot = v == "1";
+                if (d.TryGetValue("turncarried", out v)) s.TurnCarried = v == "1";
                 if (d.TryGetValue("playerlist", out v)) s.PlayerList = v == "1";
                 if (d.TryGetValue("chatfeed", out v)) s.ChatFeed = v == "1";
                 if (d.TryGetValue("zoneoutlines", out v)) s.ZoneOutlines = v == "1";
@@ -68,6 +72,7 @@ namespace AlyxMP
         {
             yield return new KeyValuePair<string, string>("tags", NameTags ? "1" : "0");
             yield return new KeyValuePair<string, string>("dot", InteractDot ? "1" : "0");
+            yield return new KeyValuePair<string, string>("turn", TurnCarried ? "1" : "0");
             yield return new KeyValuePair<string, string>("list", PlayerList ? "1" : "0");
             yield return new KeyValuePair<string, string>("feed", ChatFeed ? "1" : "0");
             yield return new KeyValuePair<string, string>("zones", ZoneOutlines ? "1" : "0");
@@ -90,10 +95,12 @@ namespace AlyxMP
                     "vconport=" + VConPort,
                     "extra=" + ExtraArgs,
                     "gamedir=" + GameDir,
+                    "autoupdate=" + (AutoUpdate ? "1" : "0"),
                     "autoreload=" + (AutoReload ? "1" : "0"),
                     "hl2hud=" + (Hl2Hud ? "1" : "0"),
                     "nametags=" + (NameTags ? "1" : "0"),
                     "interactdot=" + (InteractDot ? "1" : "0"),
+                    "turncarried=" + (TurnCarried ? "1" : "0"),
                     "playerlist=" + (PlayerList ? "1" : "0"),
                     "chatfeed=" + (ChatFeed ? "1" : "0"),
                     "zoneoutlines=" + (ZoneOutlines ? "1" : "0"),
