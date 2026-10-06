@@ -4,36 +4,25 @@
 -- launcher when it attaches. The launcher reads our "[AMP]..." print() lines over VConsole and talks
 -- back through the amp_* console commands registered below.
 --
--- Remote players are drawn as Alyx bone-merged onto an invisible animated "rig" model. HL:Alyx's
--- Alyx model has no locomotion, but every human model shares her skeleton, so:
---   stand  - citizen_female_01: idle, 8-way walk/run
---   crouch - worker_m_helmet:   crouched idle
---   armed  - combine_grunt:     rifle idle, 8-way sprint with weapon, crouched aim
--- Weapons are the player's own weapon models bone-merged onto the rig's weapon_hand_R bone.
+-- Remote players are drawn as Alyx bone-merged onto an invisible animated "rig": our own model
+-- (models/alyxmp/avatar.vmdl), built with the Workshop Tools from Half-Life: Alyx's own animations - the
+-- female citizen's idle and walk, the metrocop's run and crouch walk, and with a gun out the combine
+-- soldier's whole set - and driven by its animation graph (see the remote players section). Weapons are
+-- the same models NoVR shows in first person, in her right hand the way Alyx holds them in VR.
 -- HL:Alyx doesn't render point_worldtext: name tags use the debug overlay, and the chat feed,
 -- loading-zone banner and interact hint use game_text (the game's own HUD message font).
 
 AMP = AMP or {}
 local A = AMP
-A.VERSION = "0.5.3"
+A.VERSION = "0.6.0"
 A.PROTO = 3
 
 local MODEL_ALYX = "models/characters/alyx/alyx.vmdl"
--- Every pose comes from the Combine soldier's animation set on one invisible rig that Alyx is
--- bone-merged onto. Staying on one rig means each change of animation is the engine's own blend.
-local RIG_MODEL = "models/characters/combine_grunt/combine_grunt.vmdl"
-local SEQ_IDLE = "idle_rifle_lowered"
-local SEQ_IDLE_AIM = "combatidle"                 -- for a while after shooting
-local SEQ_CROUCH = "crouch_idle_rifle_all"
-local SEQ_RUN = "sprint_alt_"                     -- + direction, the soldiers' 8-way run
-local SEQ_START = "stand_to_run_down_axis_"       -- + direction: setting off
-local SEQ_STOP = "run_to_stand_down_axis_"        -- + direction: coming to a stop
-local SEQ_STOP_S = "run_to_stand_down_west_axis_s" -- (there's no plain _s one)
-local START_TIME = 0.35     -- how long the setting-off / stopping steps play before the run / idle
-local STOP_TIME = 0.45
-local DIRS = { "n", "nw", "w", "sw", "s", "se", "e", "ne" }
+local RIG_MODEL = "models/alyxmp/avatar.vmdl"
 
--- weapon codes on the wire: 0 none, 1 pistol, 2 shotgun, 3 smg
+-- weapon codes on the wire: 0 none, 1 pistol, 2 shotgun, 3 smg. These are NoVR's own first-person models
+-- (spawned as prop_dynamic_override: as plain props the game removes them), parented to the rig's gun_R
+-- attachment, which puts the grip in her hand exactly where their built-in VR hand holds it.
 local WEAPONS = {
     [1] = { model = "models/weapons/vr_alyxgun/vr_alyxgun.vmdl", fx = "particles/weapon_fx/muzzleflash_pistol.vpcf", snd = "AlyxPistol.Fire" },
     [2] = { model = "models/weapons/vr_shotgun/vr_flip_shotgun_body.vmdl", fx = "particles/weapon_fx/muzzleflash_heavy_shotgun.vpcf", snd = "CombineShotgun.Fire" },
@@ -48,16 +37,21 @@ local SMOOTH_YAW = 0.06
 local TELEPORT_DIST = 260   -- bigger jumps than this between snapshots aren't interpolated
 local SEND_INTERVAL = 0.05  -- 20 Hz state updates
 local HEARTBEAT = 0.5       -- resend state at least this often while standing still
-local WALK_SPEED = 12       -- below this a player is idle (units/s)
-local RUN_SPEED = 135       -- above this the run cycle is used
-local AIM_HOLD = 1.2        -- keep the aiming pose this long after a shot
--- natural speeds of the locomotion clips, so playback can follow the real movement speed
--- ground speed of the run cycle at normal playback (measured from the planted foot: ~150 u/s);
--- playback follows the real speed so feet stay planted, from NoVR's 86 u/s walk up to sprinting
-local CLIP_SPEED = { sprint_alt_ = 150 }
-local RATE_MIN, RATE_MAX = 0.45, 1.8
-local RATE_STEP = 0.1        -- only re-send the playback rate when it changed this much...
-local RATE_HOLD = 0.4        -- ...or this long has passed, so jittery packets don't make it stutter
+local AIM_HOLD = 1.2        -- keep the gun raised this long after a shot
+local ARM_TIME = 0.35       -- taking a gun out / putting it away (the gun shows from halfway)
+local RELOAD_TIME = 2.4
+-- The ground velocity (forward, left; units/s) of each gait's clips, going round from forward. The graph
+-- (tools/avatar/avatar_graph.py) blends each gait's directions at these speeds; playback is then scaled to
+-- the real speed.
+local WALK_CLIPS = { { 48.1, 0 }, { 50, -50 }, { 0, -53 }, { -38.7, -38.7 }, { -65.6, 0 }, { -38.7, 38.7 }, { 0, 53 }, { 50, 50 } }
+-- (the forward run is listed at 175 rather than its real 220, so a 140 u/s sprint plays it at 0.8: quicker steps)
+local RUN_CLIPS = { { 175, 0 }, { 151.5, -151.5 }, { 0, -153.1 }, { -108.2, -108.3 }, { -173.5, 0 }, { -108.2, 108.2 },
+    { 0, 153.1 }, { 151.5, 151.5 } }
+local ARMED_CLIPS = { { 166.4, 0 }, { 104.2, -104.2 }, { 0, -154 }, { -89.4, -89.4 }, { -117.5, 0 }, { -87.8, 87.8 },
+    { 0, 135.4 }, { 84.1, 84.1 } }
+local CROUCH_CLIPS = { { 92.6, 0 }, { 83.5, -59.4 }, { -0.4, -71.8 }, { -58.7, -46 }, { -74.7, 0 }, { -39.8, 51.4 },
+    { 0.9, 87 }, { 57.5, 51.6 } }
+local RUN_FROM, WALK_FROM = 120, 110   -- sprinting (NoVR: 140 u/s, walking 92) - with some hysteresis
 local ZONE_PAD = 12         -- leeway around changelevel trigger volumes
 local ZONE_SHOW = 90         -- a zone's outline and label fade in from about 2 m away...
 local ZONE_FULL = 30         -- ...and are fully there this close
@@ -139,7 +133,7 @@ local function destroyPuppetEnts(pp)
     if type(pp.rig) == "table" then killEnt(pp.rig) end
     if pp.rigs then for _, r in pairs(pp.rigs) do killEnt(r) end end  -- from older versions of this file
     pp.weaponEnt, pp.alyx, pp.alyxB, pp.rigs, pp.rig, pp.seq = nil, nil, nil, nil, nil, nil
-    pp.weaponCode, pp.placed, pp.phase = nil, nil, nil
+    pp.weaponCode, pp.placed, pp.phase, pp.gp, pp.heldCode = nil, nil, nil, nil, nil
 end
 
 if A.puppets then
@@ -278,7 +272,7 @@ local function drawRoster(p, dur)
     local count = 1
     for _ in pairs(A.puppets) do count = count + 1 end
     screenText(x, y, "PLAYERS  " .. count, px(15), true, DIM, 210, dur)
-    screenText(x + px(110), y, "Y  CHAT      F10  SETTINGS      /HELP", px(15), false, DIM, 150, dur)
+    screenText(x + px(110), y, "Y  CHAT      ESC  SETTINGS      /HELP", px(15), false, DIM, 150, dur)
     y = y + px(26)
     for _, pp in pairs(A.puppets) do
         screenText(x, y, displayName(pp.name), px(21), false, WHITE, 235, dur)
@@ -407,14 +401,16 @@ local function spawnProp(model, pos, seq)
     })
 end
 
+-- The rig is a generic_actor (an NPC without AI, which Valve made for custom characters): props run
+-- their animation graphs on the client only, where Lua can't set the graph's parameters.
 local function buildPuppet(pp, pos)
-    pp.rig = spawnProp(RIG_MODEL, pos, SEQ_IDLE)
+    pp.rig = SpawnEntityFromTableSynchronous("generic_actor", {
+        targetname = PROP_NAME, model = RIG_MODEL, origin = vecStr(pos), DisableCollisions = "1",
+    })
     pp.rig:SetRenderAlpha(0)
     pp.alyx = spawnProp(MODEL_ALYX, pos, nil)
     pp.alyx:FollowEntity(pp.rig, true)
-    pp.seq = nil
-    pp.phase = nil
-    pp.weaponCode = nil
+    pp.gp, pp.heldCode, pp.armed, pp.aim, pp.crouchW, pp.reloadW, pp.gait, pp.dir = {}, 0, 0, 0, 0, 0, 0, { 1, 0 }
 end
 
 local function puppetValid(pp)
@@ -444,69 +440,139 @@ local function hidePuppet(pp)
     pp.renderPos, pp.renderYaw = nil, nil
 end
 
-local function ensureWeapon(pp, code)
-    if pp.weaponCode == code and (code == 0 or (pp.weaponEnt and IsValidEntity(pp.weaponEnt))) then return end
-    killEnt(pp.weaponEnt)
-    pp.weaponEnt = nil
-    pp.weaponCode = code
-    local w = WEAPONS[code]
-    if not w or not puppetValid(pp) then return end
-    pp.weaponEnt = spawnProp(w.model, pp.rig:GetOrigin(), nil)
-    pp.weaponEnt:FollowEntity(pp.rig, true)
+-- a graph parameter, sent only when it changed
+local function setParam(pp, name, v)
+    local last = pp.gp[name]
+    if last and math.abs(last - v) < 0.005 then return end
+    pp.gp[name] = v
+    pp.rig:SetGraphParameterFloat(name, v)
+end
+
+local function trigger(pp, name)
+    pp.rig:SetGraphParameterBool(name, true)
+end
+
+local function approach(v, target, step)
+    if v < target then return math.min(v + step, target) end
+    return math.max(v - step, target)
+end
+
+local function spawnWeapon(pp, code)
+    local e = SpawnEntityFromTableSynchronous("prop_dynamic_override", {
+        targetname = PROP_NAME, model = WEAPONS[code].model, origin = vecStr(pp.rig:GetOrigin()), solid = 0,
+    })
+    if e then
+        e:SetParent(pp.rig, "gun_R")
+        e:SetLocalOrigin(Vector(0, 0, 0))
+        e:SetLocalAngles(0, 0, 0)
+    end
+    return e
+end
+
+-- A gun out: the graph goes over to the combine soldier's animations (both hands on the gun); the gun
+-- shows from halfway, once her hands are on it. Switching guns swaps the model in her hands.
+local function updateWeapon(pp, now, dt, want, reloading)
+    if not WEAPONS[want] then want = 0 end
+    if want ~= 0 then pp.heldCode = want end
+    pp.armed = approach(pp.armed, want ~= 0 and 1 or 0, dt / ARM_TIME)
+    setParam(pp, "p_armed", pp.armed)
+    local show = pp.armed >= 0.5 and pp.heldCode ~= 0
+    local ent = pp.weaponEnt
+    if ent and (not IsValidEntity(ent) or not show or pp.weaponCode ~= pp.heldCode) then
+        killEnt(ent)
+        pp.weaponEnt = nil
+    end
+    if show and not pp.weaponEnt then
+        pp.weaponEnt, pp.weaponCode = spawnWeapon(pp, pp.heldCode), pp.heldCode
+    end
+    if pp.armed == 0 then pp.heldCode = 0 end
+    -- raised for a while after each shot, otherwise held low
+    local aimed = show and now - pp.lastShot < AIM_HOLD
+    pp.aim = approach(pp.aim, aimed and 1 or 0, dt / (aimed and 0.15 or 0.4))
+    setParam(pp, "p_aim", pp.aim)
+    -- reloading: the soldier's reload on her upper body
+    if reloading and not pp.reloading and show then
+        trigger(pp, "p_reload")
+        pp.reloadAt = now
+    end
+    pp.reloading = reloading
+    local r = now - (pp.reloadAt or -100)
+    local on = show and r < RELOAD_TIME
+    pp.reloadW = approach(pp.reloadW, on and 1 or 0, dt / (on and 0.15 or 0.3))
+    setParam(pp, "p_reload_w", pp.reloadW)
 end
 
 -- Re-setting a bone-merge parent's transform every tick, even to the same values, stops the game
--- from drawing the merged Alyx model, so only touch it when it really moved.
+-- from drawing the merged Alyx model, so only touch it when it really moved. SetAbsOrigin, not
+-- SetOrigin: SetOrigin counts as a teleport, which throws away the rig's animation smoothing, so while
+-- it moved every tick its animation only showed the server's 10 Hz steps.
 local function placeRig(pp, pos, yaw)
     local last = pp.placed
     if last and (last.pos - pos):Length() < 0.05 and math.abs(angleDiff(last.yaw, yaw)) < 0.05 then return end
-    pp.rig:SetOrigin(pos)
+    pp.rig:SetAbsOrigin(pos)
     pp.rig:SetAngles(0, yaw, 0)
     pp.placed = { pos = pos, yaw = yaw }
 end
 
-local function moveDir(pp, relDir)
-    -- 8-way direction with hysteresis so diagonal movement doesn't flicker between cycles
-    local idx = math.floor(((relDir + 22.5) % 360) / 45) + 1
-    if pp.dirIdx then
-        local center = (pp.dirIdx - 1) * 45
-        if math.abs(angleDiff(relDir, center)) < 32 then idx = pp.dirIdx end
+-- Where the direction (dx, dy) meets the outline through a gait's clip velocities: the graph plays that
+-- point at the clips' own speed, which is its length.
+local function onOutline(clips, dx, dy)
+    local n = #clips
+    for i = 1, n do
+        local a, b = clips[i], clips[i % n + 1]
+        local ex, ey = b[1] - a[1], b[2] - a[2]
+        local den = ex * dy - ey * dx
+        if math.abs(den) > 1e-6 then
+            local t = -(a[1] * dy - a[2] * dx) / den
+            if t >= -1e-4 and t <= 1 + 1e-4 then
+                local x, y = a[1] + ex * t, a[2] + ey * t
+                local s = x * dx + y * dy
+                if s > 0 then return x, y, s end
+            end
+        end
     end
-    pp.dirIdx = idx
-    return DIRS[idx]
+    return clips[1][1], clips[1][2], clips[1][1]
 end
 
--- idle -> setting off -> running -> stopping -> idle, the way the soldiers move
-local function chooseSeq(pp, now, crouched, aiming, relDir)
-    if crouched then
-        pp.phase = "crouch"
-        return SEQ_CROUCH
-    end
-    if pp.speed >= WALK_SPEED then
-        local dir = moveDir(pp, relDir)
-        if pp.phase ~= "start" and pp.phase ~= "run" then
-            pp.phase, pp.phaseAt = "start", now
-        elseif pp.phase == "start" and now - pp.phaseAt >= START_TIME then
-            pp.phase = "run"
-        end
-        pp.lastDir = dir
-        return (pp.phase == "start" and SEQ_START or SEQ_RUN) .. dir
-    end
-    if pp.phase == "start" or pp.phase == "run" then pp.phase, pp.phaseAt = "stop", now end
-    if pp.phase == "stop" and now - pp.phaseAt < STOP_TIME then
-        local d = pp.lastDir or "n"
-        return d == "s" and SEQ_STOP_S or SEQ_STOP .. d
-    end
-    pp.phase = "idle"
-    return aiming and SEQ_IDLE_AIM or SEQ_IDLE
+local function setGait(pp, clips, px, py, prate, dx, dy, speed)
+    local x, y, s = onOutline(clips, dx, dy)
+    setParam(pp, px, x)
+    setParam(pp, py, y)
+    setParam(pp, prate, math.min(speed / s, 3))
+end
+
+-- Movement: every gait plays in the direction she moves (relative to where she faces), as fast as she moves.
+local function updateMovement(pp, dt, yaw, crouched)
+    local y = math.rad(yaw)
+    local cy, sy = math.cos(y), math.sin(y)
+    local fwd = pp.vel.x * cy + pp.vel.y * sy
+    local left = pp.vel.y * cy - pp.vel.x * sy
+    local speed = math.sqrt(fwd * fwd + left * left)
+    -- the direction is kept while stopping, so the legs don't turn on the spot as she slows down
+    if speed > 8 then pp.dir = { fwd / speed, left / speed } end
+    local dx, dy = pp.dir[1], pp.dir[2]
+    setGait(pp, WALK_CLIPS, "p_wx", "p_wy", "p_wrate", dx, dy, speed)
+    setGait(pp, RUN_CLIPS, "p_rx", "p_ry", "p_rrate", dx, dy, speed)
+    setGait(pp, ARMED_CLIPS, "p_ax", "p_ay", "p_arate", dx, dy, speed)
+    setGait(pp, CROUCH_CLIPS, "p_cx", "p_cy", "p_crate", dx, dy, speed)
+    local sprinting = speed > (pp.gait > 0.5 and WALK_FROM or RUN_FROM)
+    pp.gait = approach(pp.gait, sprinting and 1 or 0, dt / 0.25)
+    setParam(pp, "p_gait", pp.gait)
+    local moving = math.min(speed / 40, 1)
+    setParam(pp, "p_move", moving)
+    setParam(pp, "p_cmove", moving)
+    pp.crouchW = approach(pp.crouchW, crouched and 1 or 0, dt / 0.25)
+    setParam(pp, "p_crouch", pp.crouchW)
 end
 
 local function fireEffects(pp, code)
     local w = WEAPONS[code]
     if not w or not puppetValid(pp) then return end
-    ensureWeapon(pp, code)
     local ent = pp.weaponEnt
-    if not ent or not IsValidEntity(ent) then return end
+    if not ent or not IsValidEntity(ent) then
+        StartSoundEvent(w.snd, pp.rig)
+        return
+    end
     local fx = ParticleManager:CreateParticle(w.fx, PATTACH_POINT_FOLLOW, ent)
     ParticleManager:SetParticleControlEnt(fx, 0, ent, PATTACH_POINT_FOLLOW, "muzzle", Vector(0, 0, 0), true)
     ParticleManager:ReleaseParticleIndex(fx)
@@ -639,23 +705,6 @@ local function samplePuppet(pp, rt)
     return s.pos, s.yaw, s.eyeh, s.flags, s.weapon, false, s.pitch
 end
 
-local function setPlayback(pp, rig, seq)
-    local rate = 1
-    for prefix, clip in pairs(CLIP_SPEED) do
-        if seq:sub(1, #prefix) == prefix then
-            rate = math.max(RATE_MIN, math.min(RATE_MAX, pp.gait / clip))
-            break
-        end
-    end
-    local now = Time()
-    if pp.rate and pp.rateSeq == seq and (math.abs(rate - pp.rate) < RATE_STEP or now - (pp.rateAt or 0) < RATE_HOLD)
-        and math.abs(rate - pp.rate) < 0.3 then
-        return
-    end
-    pp.rate, pp.rateSeq, pp.rateAt = rate, seq, now
-    DoEntFireByInstanceHandle(rig, "SetPlaybackRate", string.format("%.2f", rate), 0, nil, nil)
-end
-
 local function updatePuppet(pp, now, dt)
     local snaps = pp.snaps
     if #snaps == 0 or not pp.off then return end
@@ -698,19 +747,10 @@ local function updatePuppet(pp, now, dt)
     end
     pos, yaw = pp.renderPos, pp.renderYaw
     pp.speed = pp.vel:Length()
-    pp.gait = (pp.gait or pp.speed) + (pp.speed - (pp.gait or pp.speed)) * math.min(dt * 4, 1)
 
-    ensureWeapon(pp, weapon or 0)
-    local aiming = (now - pp.lastShot) < AIM_HOLD
-    local moveYaw = math.deg(atan2(pp.vel.y, pp.vel.x))
-    local seq = chooseSeq(pp, now, bit(flags, 2), aiming, angleDiff(moveYaw, yaw))
     placeRig(pp, pos, yaw)
-    if seq ~= pp.seq then
-        pp.rig:ResetSequence(seq)
-        pp.seq = seq
-        pp.rate = nil
-    end
-    setPlayback(pp, pp.rig, seq)
+    updateMovement(pp, dt, yaw, bit(flags, 2))
+    updateWeapon(pp, now, dt, weapon or 0, bit(flags, 16))
     updateFlashlight(pp, pos, yaw, pitch, eyeh, bit(flags, 8))
     updateTarget(pp, pos, eyeh, Entities:GetLocalPlayer())
     drawTag(pp, pos, eyeh, Entities:GetLocalPlayer())
@@ -956,6 +996,7 @@ local function localShot()
     local now = Time()
     if now - A.lastShotEmit < 0.04 then return end
     A.lastShotEmit = now
+    A.hudFullMag = false
     if not mpActive() then return end
     local w = currentWeapon(now)
     if w == 0 then w = A.vrWeapon end
@@ -977,7 +1018,7 @@ end
 local NOVR_FIRE_ALIAS = "+iv_attack;usemultitool"
 
 local function hookNoVRFire(now, p)
-    if IS_VR or not Viewmodels_UpgradeModel or now < (A.nextFireHook or 0) then return end
+    if IS_VR or not Viewmodels_UpgradeModel or now < (A.nextFireHook or 0) or (A.menu and A.menu.open) then return end
     A.nextFireHook = now + 3
     SendToConsole("alias +customattack \"" .. NOVR_FIRE_ALIAS .. ";amp_trigger\"")
     -- the right mouse button also turns what you're carrying (see below); NoVR rebinds its keys on every
@@ -1172,6 +1213,8 @@ local function watchViewModelShots(now)
     -- auto reload (settings menu): when the gun reloads by itself, come out of aim-down-sights the way
     -- NoVR's reload key does
     if A.cfg.autoreload == "1" and seq ~= A.vmSeq and seq:find("reload") then SendToConsole("novr_resetads") end
+    -- a finished reload: the magazine is full (the HUD's glow goes by this, see updateGlowHud)
+    if (A.vmSeq or ""):find("reload") and not seq:find("reload") then A.hudFullMag = true end
     A.vmSeq, A.vmCycle = seq, cyc
 end
 
@@ -1186,6 +1229,7 @@ local function sendLocalState(now, p)
     if eyeh < (IS_VR and 42 or 48) then flags = flags + 2 end
     if p:GetHealth() <= 0 then flags = flags + 4 end
     if localFlashlightOn() then flags = flags + 8 end
+    if not IS_VR and (A.vmSeq or ""):find("reload") then flags = flags + 16 end
     local weapon = currentWeapon(now)
 
     local last = A.lastSent
@@ -1193,12 +1237,13 @@ local function sendLocalState(now, p)
         or (feet - last.pos):Length() > 0.5
         or math.abs(angleDiff(yaw, last.yaw)) > 1
         or math.abs(eyeh - last.eyeh) > 2
+        or math.abs(pitch - last.pitch) > 2
         or flags ~= last.flags
         or weapon ~= last.weapon
     if not changed and now - A.lastSend < HEARTBEAT then return end
 
     A.lastSend = now
-    A.lastSent = { pos = feet, yaw = yaw, eyeh = eyeh, flags = flags, weapon = weapon }
+    A.lastSent = { pos = feet, yaw = yaw, pitch = pitch, eyeh = eyeh, flags = flags, weapon = weapon }
     A.Emit("s", A.map, string.format("%.3f", now), fmt(feet.x), fmt(feet.y), fmt(feet.z),
         fmt(yaw), fmt(pitch), fmt(eyeh), flags, weapon)
 end
@@ -1386,6 +1431,7 @@ end)
 -- the right mouse button (NoVR, see hookNoVRFire): turns what you carry (unless that's switched off in
 -- the settings menu); otherwise it does what it always did (aim down sights...)
 reg("+amp_turn", function()
+    if A.menu and A.menu.open then return end      -- (the menu is mouse-only; right-click does nothing there)
     local p = Entities:GetLocalPlayer()
     if not IS_VR and p and p:GetHealth() > 0 and shown("turn") then
         if not A.carry then
@@ -1469,6 +1515,228 @@ listen("physgun_pickup", function(info) if A.World and info.entindex and mpActiv
 listen("player_shoot", function() localShot() end)
 
 ---------------------------------------------------------------------------------------------------
+-- Glow HUD (NoVR). The game draws the numbers, the dots and the icons itself. What it
+-- can't draw (the glow and the dim placeholder zeros) are labels that wait off the
+-- screen until an event in the HUD's hudanimations.txt moves them in:
+--   AmpHealth1 / 2 / 3   the health has that many digits (this also right-aligns it), AmpHealthOff
+--   AmpAmmoOn1 / 2       a gun is out, its magazine count has that many digits, AmpAmmoOff
+-- We run the ones that fit what the game is showing, and again every two seconds because a new
+-- level or a reloaded HUD starts with everything hidden. Without that HUD the events don't exist
+-- and nothing happens.
+
+local function updateGlowHud(now, p)
+    if IS_VR then return end
+    local health, ammo = "Off", "Off"
+    local hp = p:GetHealth()
+    local hide = Convars:GetInt("hidehud") or 0
+    local gun = currentWeapon(now)
+    if gun ~= A.hudGun then A.hudGun, A.hudFullMag = gun, false end
+    -- hidehud 4: everything, 8: health and ammo, 32: "needs the suit" (NoVR's menu and cutscenes)
+    if hp > 0 and not (bit(hide, 4) or bit(hide, 8) or bit(hide, 32)) and Convars:GetInt("r_drawvgui") ~= 0 then
+        health = hp >= 100 and "3" or hp >= 10 and "2" or "1"
+        -- the ammo count shows for the guns; hidehud 1 hides it along with the weapon selection
+        if gun ~= 0 and not bit(hide, 1) then
+            -- Lua can't read the count, so go by the magazines: the SMG's 30 rounds are mostly two
+            -- digits, the shotgun's 6 always one, the pistol's 10 only from a reload to the next shot
+            ammo = (gun == 3 or (gun == 1 and A.hudFullMag)) and "On2" or "On1"
+        end
+    end
+    local state = health .. ammo
+    if state == A.glowHud and now < (A.nextGlowHud or 0) then return end
+    A.glowHud = state
+    A.nextGlowHud = now + 2
+    SendToConsole("testhudanim AmpHealth" .. health)
+    SendToConsole("testhudanim AmpAmmo" .. ammo)
+end
+
+---------------------------------------------------------------------------------------------------
+-- The settings menu (NoVR): ESC over the game. The game keeps ESC to itself (binds never see it), so
+-- the launcher passes it on as amp_menu. The menu is drawn by the glow HUD - its AmpMenu* labels, moved
+-- and faded by its events (tools/menu_hud/make_menu.py writes both, and the layout numbers below come
+-- from there). It's used with the mouse alone: the mouse moves a cursor (mouse look is slowed a thousand
+-- times and the view put back, as when turning what you carry), pointing at a row lights up its name, a
+-- click switches it; ESC closes it. While it's open the launcher keeps the keyboard from the game, and the
+-- fire button clicks in the menu instead. Switches apply at once and go to the launcher, which keeps them
+-- and sends them back (amp_cfg) every time.
+-- Never let go of the game's trigger (-iv_attack) when it isn't held: that leaves it stuck down, and the
+-- gun fires by itself until the next real click (NoVR's multitool code steers round the same thing).
+
+local MENU = { "autoreload", "tags", "dot", "turn", "list", "feed", "zones" }   -- its rows, top down
+local MENU_L, MENU_R, MENU_ROW0, MENU_ROW_H = -166, 166, 136, 29    -- HUD units (640x480, x from the centre)
+local MENU_TOP, MENU_BOTTOM = 84, 348                                -- the menu's area (leaving it unlights the row)
+local CURSOR_SPEED = 15         -- cursor pixels per thousandth of a degree the view would have turned...
+local CURSOR_SENS = 50          -- ...at this mouse sensitivity (so it moves alike for everyone)
+local CURSOR_PITCH = 0.65       -- the view turns about half as fast again up/down; even it out
+local CURSOR_DOT = "k"          -- the cursor in AlyxMPMenuFx
+-- NoVR's fire button (novr.lua sets it on every level load, hookNoVRFire adds to it); the menu borrows it
+-- while it's open
+local NOVR_ALIASES = { { "+customattack", NOVR_FIRE_ALIAS .. ";amp_trigger" }, { "-customattack", "-iv_attack" } }
+local MENU_ALIASES = { { "+customattack", "amp_menu_click" }, { "-customattack", "amp_menu_unclick" } }
+
+local function hudAnim(name) SendToConsole("testhudanim " .. name) end
+
+local function setAliases(list)
+    for _, a in ipairs(list) do SendToConsole("alias " .. a[1] .. " \"" .. a[2] .. "\"") end
+end
+
+-- the game's own menu sounds (Half-Life: Alyx's main menu uses them), right at the player's ears
+local function menuSound(name)
+    local p = Entities:GetLocalPlayer()
+    if p then StartSoundEventFromPosition(name, p:EyePosition()) end
+end
+
+local function menuOn(i) return A.cfg[MENU[i]] ~= "0" end
+
+-- HUD units -> screen pixels (the HUD scales with the window's height, x measured from the centre)
+local function hudScale()
+    local w, h = screenSize()
+    return h / 480, w / 2
+end
+
+-- the row under screen point (x, y), or nil
+local function rowAt(x, y)
+    local s, cx = hudScale()
+    local u, v = (x - cx) / s, y / s
+    if u < MENU_L or u > MENU_R then return nil end
+    local i = math.floor((v - MENU_ROW0) / MENU_ROW_H) + 1
+    if i >= 1 and i <= #MENU then return i end
+    return nil
+end
+
+local function insideMenu(x, y)
+    local s, cx = hudScale()
+    local u, v = (x - cx) / s, y / s
+    return u >= MENU_L - 20 and u <= MENU_R + 20 and v >= MENU_TOP and v <= MENU_BOTTOM
+end
+
+local function menuHover(i, sound)
+    local m = A.menu
+    if i == m.hover then return end
+    m.hover = i
+    hudAnim(i and ("AmpMenuHover" .. i) or "AmpMenuHoverNone")
+    if i and sound then menuSound("PanoUI.Rollover") end
+end
+
+function A.MenuOpen()
+    local m = A.menu
+    local p = Entities:GetLocalPlayer()
+    if IS_VR or m.open or not p or p:GetHealth() <= 0 then return end
+    if A.carry then dropCarry(true) end     -- (E switches things in the menu)
+    m.open, m.hover, m.pressed = true, nil, false
+    setAliases(MENU_ALIASES)
+    -- the mouse drives the cursor; the view stays where it is
+    local sens = Convars:GetFloat("mouse_pitchyaw_sensitivity") or rawget(_G, "MOUSE_SENSITIVITY") or 50
+    local view = p:EyeAngles()
+    m.cap = { sens = sens, view = QAngle(view.x, view.y, 0), last = view, tag = view.z }
+    SendToConsole("mouse_pitchyaw_sensitivity " .. sens / TURN_SENS_DIV)
+    local w, h = screenSize()
+    m.cx, m.cy = w / 2, h / 2
+    -- the game's reticle (the brackets round the middle of the screen) would sit in the menu
+    m.reticle = Convars:GetInt("hud_draw_fixed_reticle")
+    if m.reticle and m.reticle ~= 0 then SendToConsole("hud_draw_fixed_reticle 0") end
+    hudAnim("AmpMenuOpen")
+    m.showAt = Time() + 0.1     -- the switches come in as the rows do
+    menuSound("PanoUI.Appear")
+    A.Emit("menu", 1)           -- (the launcher keeps the keyboard from the game meanwhile)
+end
+
+function A.MenuClose(quiet)
+    local m = A.menu
+    if not m.open then return end
+    m.open, m.showAt, m.hover = false, nil, nil
+    hudAnim("AmpMenuClose")
+    setAliases(NOVR_ALIASES)
+    -- the mouse button is still down from a click in the menu: its release mustn't let go of the trigger
+    if m.pressed then SendToConsole("alias -customattack \"alias -customattack -iv_attack\"") end
+    m.pressed = false
+    local c = m.cap
+    m.cap = nil
+    if c then
+        SendToConsole("mouse_pitchyaw_sensitivity " .. c.sens)
+        SendToConsole(string.format("setang_exact %.6f %.6f 0", c.view.x, c.view.y))
+    end
+    if m.reticle and m.reticle ~= 0 then SendToConsole("hud_draw_fixed_reticle " .. m.reticle) end
+    if not quiet then menuSound("PanoUI.Disappear") end
+    A.Emit("menu", 0)
+end
+
+local function menuSwitch(i)
+    local m = A.menu
+    if not m.open or m.showAt or not i then return end
+    local key = MENU[i]
+    local on = not menuOn(i)
+    A.cfg[key] = on and "1" or "0"
+    hudAnim((on and "AmpMenuOn" or "AmpMenuOff") .. i)
+    menuSound("PanoUI.ToggleOption")
+    A.Emit("cfg", key, A.cfg[key])
+end
+
+local function menuClick()
+    local m = A.menu
+    if not m.open then return end
+    local i = rowAt(m.cx, m.cy)
+    if i then
+        menuHover(i, false)
+        menuSwitch(i)
+    end
+end
+
+local function updateMenu(now, p)
+    local m = A.menu
+    if not m.open then return end
+    if p:GetHealth() <= 0 then
+        A.MenuClose(true)
+        return
+    end
+    if m.showAt and now >= m.showAt then
+        m.showAt = nil
+        for i = 1, #MENU do hudAnim((menuOn(i) and "AmpMenuShowOn" or "AmpMenuShowOff") .. i) end
+        menuHover(rowAt(m.cx, m.cy), false)     -- the row under the cursor from the start
+    end
+    -- the cursor
+    local c = m.cap
+    if c then
+        local dyaw, dpitch = updateTurning(c, p:EyeAngles(), now)
+        local k = TURN_SENS_DIV * CURSOR_SPEED * CURSOR_SENS / math.max(c.sens, 1)
+        local w, h = screenSize()
+        local x = math.max(0, math.min(w - 1, m.cx - dyaw * k))
+        local y = math.max(0, math.min(h - 1, m.cy + dpitch * k * CURSOR_PITCH))
+        if x ~= m.cx or y ~= m.cy then
+            m.cx, m.cy = x, y
+            local i = rowAt(x, y)
+            if i then menuHover(i, true) elseif m.hover and not insideMenu(x, y) then menuHover(nil) end
+        end
+        local size = px(34)
+        local tx, ty = math.floor(m.cx - size / 2 + 0.5), math.floor(m.cy - size / 2 + 0.5)
+        DebugScreenTextPretty(tx, ty, 0, CURSOR_DOT, 255, 236, 170, 255, 0, "AlyxMPMenuFx", size, false)
+    end
+end
+
+reg("amp_menu", function() if A.menu.open then A.MenuClose() else A.MenuOpen() end end)
+reg("amp_menu_click", function()
+    A.menu.pressed = true
+    menuClick()
+end)
+-- the fire button let go while the menu is open: after a click in the menu, nothing; otherwise it was
+-- already down (firing) when the menu opened, and the trigger is let go of here (unless NoVR's multitool
+-- already did)
+reg("amp_menu_unclick", function()
+    local m = A.menu
+    if m.pressed then
+        m.pressed = false
+        return
+    end
+    local vm = Entities:FindByClassname(nil, "viewmodel")
+    if vm and (vm:GetModelName() or ""):find("v_multitool") then return end
+    SendToConsole("-iv_attack")
+end)
+
+-- this file is run again on every level (and when the launcher attaches): a menu that was open is gone
+-- with the old level, and the mouse is given back
+A.menu = A.menu or {}
+if A.menu.open then A.MenuClose(true) end
+
+---------------------------------------------------------------------------------------------------
 -- main loop
 
 local lastTick = Time()
@@ -1478,6 +1746,8 @@ local function tick()
     lastTick = now
     local p = Entities:GetLocalPlayer()
     if p then
+        updateGlowHud(now, p)
+        updateMenu(now, p)
         hookNoVRFire(now, p)
         updateCarry(p, now)
         watchViewModelShots(now)

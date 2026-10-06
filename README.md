@@ -21,7 +21,7 @@ needs to open TCP port 27420 on their router, or you can all use a VPN like Tail
 
 ## In the game
 
-- **Y** to chat, **F10** for settings.
+- **Y** to chat, **ESC** for settings.
 - A dot in your crosshair means you can use what you're looking at.
 - Carrying something? Hold the **right mouse button** and move the mouse to turn it. **E** drops it.
 - You see each other as Alyx, with your names above your heads.
@@ -34,7 +34,7 @@ needs to open TCP port 27420 on their router, or you can all use a VPN like Tail
 
 - Enemies are run by the host's game: everyone sees them in the same place, going after the same player,
   with the same health, and they die for everyone at once.
-- Alyx MP adds a few small things to NoVR: a Half-Life 2 style HUD, auto reload and one line in its
+- Alyx MP adds a few small things to NoVR: a new HUD, auto reload and one line in its
   interaction script. Uninstalling removes them.
 - The launcher tells you when there's a new version: click **Update** at the top, or tick
   **Update automatically** under *update log*.

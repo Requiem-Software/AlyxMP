@@ -1,0 +1,1751 @@
+// Alyx Multiplayer: NoVR's HUD layout with the glow HUD's health and ammo corners (tools/make_glow_hud.py)
+"Resource/HudLayout.res"
+{
+	HudHealth [$WIN32]
+	{
+		"fieldName"	"HudHealth"
+		"xpos"	"16"
+		"ypos"	"440"
+		"zpos"	"4"
+		"wide"	"80"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"PaintBackgroundType"	"0"
+		"paintbackground"	"0"
+		"TextFont"	"AlyxMPHudCaptions"
+		"text_xpos"	"0"
+		"text_ypos"	"0"
+		"digit_xpos"	"11.52"
+		"digit_ypos"	"0"
+	}
+	HudHealthIcon
+	{
+		"ControlName"          "Label"
+		"fieldName"            "HudHealthIcon"
+		"xpos"                 "24"
+		"ypos"                 "417" //"zpos"                 "5"
+		"wide"                 "56"
+		"tall"                 "56" //"autoResize"           "0" //"pinCorner"            "0"
+		"visible"              "0"
+		"enabled"              "0" //"textAlignment"        "center" //"dulltext"             "0" //"brighttext"           "0"
+		"PaintBackgroundType"  "0" 
+		"font"                 "HudHealthIcon"
+		"labelText"            "0" 
+		//"fgcolor_override"     "0 0 0 255"
+		//"bgcolor_override"     "0 0 0 0" //"255 155 0 255" 
+		"alpha"                "0"
+	}
+	HudWristPockets
+	{
+		"ControlName"          "Label"
+		"fieldName"            "HudWristPockets"
+		"xpos"                 "136"
+		"ypos"                 "436"
+		"zpos"                 "-1"
+		"wide"                 "58"
+		"tall"                 "28"
+		"visible"              "0"
+		"enabled"              "0" 
+		"PaintBackgroundType"  "2" 
+		"font"                 "HudHealthIcon"
+		"labelText"            "" 
+		"fgcolor_override"     "0 0 0 124"
+		"bgcolor_override"     "0 0 0 124" 
+		"alpha"                "0"
+	}
+	HudHealth [$X360]
+	{
+		"fieldName"		"HudHealth"
+		"xpos"	"48"
+		"ypos"	"416"
+		"wide"	"115"
+		"tall"  "36"
+		"visible" "1"
+		"enabled" "1"
+
+		"PaintBackgroundType"	"2"
+		
+		"text_xpos" "8"
+		"text_ypos" "18"
+		"digit_xpos" "60"
+		"digit_ypos" "-1"
+	}
+
+	HudAmmo	[$WIN32]
+	{
+		"fieldName"	"HudAmmo"
+		"xpos"	"r140"
+		"ypos"	"440"
+		"zpos"	"4"
+		"wide"	"130"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"PaintBackgroundType"	"0"
+		"paintbackground"	"0"
+		"TextFont"	"AlyxMPHudCaptions"
+		"text_xpos"	"0"
+		"text_ypos"	"0"
+		"digit_xpos"	"33.85"
+		"digit_ypos"	"0"
+		"digit2_xpos"	"63.39"
+		"digit2_ypos"	"8.01"
+	}
+	HudAmmo	[$X360]
+	{
+		"fieldName" "HudAmmo"
+		"xpos"	"r208"
+		"ypos"	"416"
+		"wide"	"160"
+		"tall"  "36"
+		"visible" "1"
+		"enabled" "1"
+
+		"PaintBackgroundType"	"2"
+
+		"text_xpos" "8"
+		"text_ypos" "18"
+		"digit_xpos" "60"
+		"digit_ypos" "-1"
+		"digit2_xpos" "120"
+		"digit2_ypos" "14"
+	}
+
+	HudAmmoSecondary	[$WIN32]
+	{
+		"fieldName" "HudAmmoSecondary"
+		"xpos"	"r104" //"r76"
+		"ypos"	"365" //"432"
+		"wide"	"86" //"60"
+		"tall"  "0"
+		"visible" "0" //"1"
+		"enabled" "1"
+
+		"PaintBackgroundType"	"2"
+		
+		"TextFont"	"AlyxHealthAmmoLabel"
+
+		"text_xpos" "8"
+		"text_ypos" "4" //"22"
+		"digit_xpos" "36"
+		"digit_ypos" "2"
+	}
+	HudAmmoSecondary	[$X360]
+	{
+		"fieldName" "HudAmmoSecondary"
+		"xpos"	"r113"
+		"ypos"	"416"
+		"wide"	"65"
+		"tall"  "36"
+		"visible" "1"
+		"enabled" "1"
+
+		"PaintBackgroundType"	"2"
+
+		"text_xpos" "8"
+		"text_ypos" "22"
+		"digit_xpos" "36"
+		"digit_ypos" "-1"
+	}
+	
+	HudSuitPower	[$WIN32]
+	{
+		"fieldName" "HudSuitPower"
+		"visible" "1"
+		"enabled" "1"
+		"xpos"	"16"
+		"ypos"	"396"
+		"wide"	"102"
+		"tall"	"26"
+		
+		"AuxPowerLowColor" "255 0 0 220"
+		"AuxPowerHighColor" "255 220 0 220"
+		"AuxPowerDisabledAlpha" "70"
+
+		"BarInsetX" "8"
+		"BarInsetY" "15"
+		"BarWidth" "92"
+		"BarHeight" "4"
+		"BarChunkWidth" "6"
+		"BarChunkGap" "3"
+
+		"text_xpos" "8"
+		"text_ypos" "4"
+		"text2_xpos" "8"
+		"text2_ypos" "22"
+		"text2_gap" "10"
+
+		"PaintBackgroundType"	"2"
+	}
+	HudSuitPower	[$X360]
+	{
+		"fieldName" "HudSuitPower"
+		"visible" "1"
+		"enabled" "1"
+		"xpos"	"48"
+		"ypos"	"370"
+		"wide"	"102"
+		"tall"	"26"
+		
+		"AuxPowerLowColor" "255 100 0 220"
+		"AuxPowerHighColor" "255 220 0 220"
+		"AuxPowerDisabledAlpha" "70"
+
+		"BarInsetX" "8"
+		"BarInsetY" "19"
+		"BarWidth" "92"
+		"BarHeight" "5"
+		"BarChunkWidth" "6"
+		"BarChunkGap" "3"
+
+		"text_xpos" "8"
+		"text_ypos" "4"
+		"text2_xpos" "8"
+		"text2_ypos" "25"
+		"text2_gap" "12"
+
+		"PaintBackgroundType"	"2"
+	}
+
+	HudPosture	[$WIN32]
+	{
+		"fieldName" 		"HudPosture"
+		"visible" 		"1"
+		"PaintBackgroundType"	"2"
+		"xpos"	"16"
+		"ypos"	"316"
+		"tall"  "36"
+		"wide"	"36"
+		"font"	"WeaponIconsSmall"
+		"icon_xpos"	"10"
+		"icon_ypos" 	"0"
+	}
+	HudPosture	[$X360]
+	{
+		"fieldName" 		"HudPosture"
+		"visible" 		"1"
+		"PaintBackgroundType"	"2"
+		"xpos"	"48"
+		"ypos"	"316"
+		"tall"  "36"
+		"wide"	"36"
+		"font"	"WeaponIconsSmall"
+		"icon_xpos"	"10"
+		"icon_ypos" 	"2"
+	}
+	
+	HudFlashlight
+	{
+		"fieldName" "HudFlashlight"
+		"visible" "1"
+		"alpha" "0"
+		"PaintBackgroundType"	"2"
+		"xpos"	"270"		[$WIN32]
+		"ypos"	"444"		[$WIN32]
+		"xpos_hidef"	"293"		[$X360]		// aligned to left
+		"xpos_lodef"	"c-18"		[$X360]		// centered in screen
+		"ypos"	"428"		[$X360]				
+		"tall"  "24"
+		"wide"	"36"
+		"font"	"WeaponIconsSmall"
+		
+		"icon_xpos"	"4"
+		"icon_ypos" "-8"
+		
+		"BarInsetX" "4"
+		"BarInsetY" "18"
+		"BarWidth" "28"
+		"BarHeight" "2"
+		"BarChunkWidth" "2"
+		"BarChunkGap" "1"
+	}
+	HudDamageIndicator
+	{
+		"fieldName" "HudDamageIndicator"
+		"visible" "1"
+		"enabled" "1"
+		"DmgColorLeft" "255 0 0 0"
+		"DmgColorRight" "255 0 0 0"
+		
+		"dmg_xpos" "30"
+		"dmg_ypos" "100"
+		"dmg_wide" "36"
+		"dmg_tall1" "240"
+		"dmg_tall2" "200"
+	}
+
+	HudZoom
+	{
+		"fieldName" "HudZoom"
+		"visible" "1"
+		"enabled" "1"
+		"Circle1Radius" "66"
+		"Circle2Radius"	"74"
+		"DashGap"	"16"
+		"DashHeight" "4"	[$WIN32]
+		"DashHeight" "6"	[$X360]		
+		"BorderThickness" "88"
+	}
+	HudWeaponSelection
+	{
+		"fieldName" "HudWeaponSelection"
+		"ypos" 	"16"	[$WIN32]
+		"ypos" 	"32"	[$X360]
+		"visible" "1"
+		"enabled" "1"
+		"SmallBoxSize" "38" //"72"
+		"MediumBoxWide"	"38" //"72" //"95"
+		"MediumBoxWide_hidef"	"38" //"72" //"78"
+		"MediumBoxTall"	"38" //"72" //"50"
+		"MediumBoxTall_hidef"	"38" //"72" //"50"
+		"MediumBoxWide_lodef"	"38" //"72" //"74"
+		"MediumBoxTall_lodef"	"38" //"72" //"50"
+		"LargeBoxWide" "38" //"72" //"112"
+		"LargeBoxTall" "38" //"72" //"80"
+		"BoxGap" "0" //"8"
+		"SelectionNumberXPos" "-4000" //"4"
+		"SelectionNumberYPos" "-4000" //"4"
+		"SelectionGrowTime"	"0.4"
+		"TextYPos" "16"
+	}
+
+	HudCrosshair
+	{
+		"fieldName" "HudCrosshair"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HudDeathNotice
+	{
+		"fieldName" "HudDeathNotice"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HudVehicle
+	{
+		"fieldName" "HudVehicle"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	ScorePanel
+	{
+		"fieldName" "ScorePanel"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HudTrain
+	{
+		"fieldName" "HudTrain"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HudMOTD
+	{
+		"fieldName" "HudMOTD"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HudMessage
+	{
+		"fieldName" "HudMessage"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "f0"
+		"tall"	 "480"
+	}
+
+	HudMenu
+	{
+		"fieldName" "HudMenu"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HudCloseCaption
+	{
+		"fieldName" "HudCloseCaption"
+		"visible"	"1"
+		"enabled"	"1"
+		"xpos"		"c-250"
+		"ypos"		"276"	[$WIN32]
+		"ypos"		"236"	[$X360]
+		"wide"		"500"
+		"tall"		"136"	[$WIN32]
+		"tall"		"176"	[$X360]
+
+		"BgAlpha"	"128"
+
+		"GrowTime"		"0.25"
+		"ItemHiddenTime"	"0.2"  // Nearly same as grow time so that the item doesn't start to show until growth is finished
+		"ItemFadeInTime"	"0.15"	// Once ItemHiddenTime is finished, takes this much longer to fade in
+		"ItemFadeOutTime"	"0.3"
+		"topoffset"		"0"		[$WIN32]
+		"topoffset"		"0"	[$X360]
+	}
+
+	HudChat
+	{
+		"fieldName" "HudChat"
+		"visible" "0"
+		"enabled" "1"
+		"xpos"	"0"
+		"ypos"	"0"
+		"wide"	 "4"
+		"tall"	 "4"
+	}
+
+	HudHistoryResource	[$WIN32]
+	{
+		"fieldName" "HudHistoryResource"
+		"visible" "1"
+		"enabled" "1"
+		"xpos"	"r252"
+		"ypos"	"40"
+		"wide"	 "248"
+		"tall"	 "320"
+
+		"history_gap"	"56" [!$OSX]
+		"history_gap"	"64" [$OSX]
+		"icon_inset"	"38"
+		"text_inset"	"36"
+		"text_inset"	"26"
+		"NumberFont"	"HudNumbersSmall"
+	}
+	HudHistoryResource	[$X360]
+	{
+		"fieldName" "HudHistoryResource"
+		"visible" "1"
+		"enabled" "1"
+		"xpos"	"r300"
+		"ypos"	"40" 
+		"wide"	 "248"
+		"tall"	 "240"
+
+		"history_gap"	"50"
+		"icon_inset"	"38"
+		"text_inset"	"36"
+		"NumberFont"	"HudNumbersSmall"
+	}
+
+	HudGeiger
+	{
+		"fieldName" "HudGeiger"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HUDQuickInfo
+	{
+		"fieldName" "HUDQuickInfo"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HudWeapon
+	{
+		"fieldName" "HudWeapon"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+	HudAnimationInfo
+	{
+		"fieldName" "HudAnimationInfo"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HudPredictionDump
+	{
+		"fieldName" "HudPredictionDump"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"
+		"tall"	 "480"
+	}
+
+	HudHintDisplay
+	{
+		"fieldName"				"HudHintDisplay"
+		"visible"				"0"
+		"enabled"				"1"
+		"xpos"					"c-240"
+		"ypos"					"c60"
+		"xpos"	"r148"	[$X360]
+		"ypos"	"r338"	[$X360]
+		"wide"					"480"
+		"tall"					"100"
+		"HintSize"				"1"
+		"text_xpos"				"8"
+		"text_ypos"				"8"
+		"center_x"				"0"	// center text horizontally
+		"center_y"				"-1"	// align text on the bottom
+		"paintbackground"		"0"
+	}	
+
+	HudHintKeyDisplay
+	{
+		"fieldName"	"HudHintKeyDisplay"
+		"visible"	"0"
+		"enabled" 	"1"
+		"xpos"		"r120"	[$WIN32]
+		"ypos"		"r340"	[$WIN32]
+		"xpos"		"r148"	[$X360]
+		"ypos"		"r338"	[$X360]
+		"wide"		"100"
+		"tall"		"200"
+		"text_xpos"	"8"
+		"text_ypos"	"8"
+		"text_xgap"	"8"
+		"text_ygap"	"8"
+		"TextColor"	"255 170 0 220"
+
+		"PaintBackgroundType"	"2"
+	}
+
+
+	HudSquadStatus	[$WIN32]
+	{
+		"fieldName"	"HudSquadStatus"
+		"visible"	"1"
+		"enabled" "1"
+		"xpos"	"r120"
+		"ypos"	"380"
+		"wide"	"104"
+		"tall"	"46"
+		"text_xpos"	"8"
+		"text_ypos"	"34"
+		"SquadIconColor"	"255 220 0 160"
+		"IconInsetX"	"8"
+		"IconInsetY"	"0"
+		"IconGap"		"24"
+
+		"PaintBackgroundType"	"2"
+	}
+	HudSquadStatus	[$X360]
+	{
+		"fieldName"	"HudSquadStatus"
+		"visible"	"1"
+		"enabled" "1"
+		"xpos"	"r182"
+		"ypos"	"348"
+		"wide"	"134"
+		"tall"	"62"
+		"text_xpos"	"8"
+		"text_ypos"	"44"
+		"SquadIconColor"	"255 220 0 160"
+		"IconInsetX"	"8"
+		"IconInsetY"	"-4"
+		"IconGap"		"24"
+		"IconFont"		"SquadIcon"
+
+		"PaintBackgroundType"	"2"
+	}
+
+	HudPoisonDamageIndicator	[$WIN32]
+	{
+		"fieldName"	"HudPoisonDamageIndicator"
+		"visible"	"0"
+		"enabled" "1"
+		"xpos"	"16"
+		"ypos"	"346"
+		"wide"	"0"
+		"tall"	"0"
+		"text_xpos"	"8"
+		"text_ypos"	"8"
+		"text_ygap" "14"
+		"TextColor"	"255 170 0 220"
+		"PaintBackgroundType"	"2"
+	}
+	HudPoisonDamageIndicator	[$X360]
+	{
+		"fieldName"	"HudPoisonDamageIndicator"
+		"visible"	"0"
+		"enabled" "1"
+		"xpos"	"48"
+		"ypos"	"264"
+		"wide"	"0"
+		"tall"	"0"
+		"text_xpos"	"8"
+		"text_ypos"	"6"
+		"text_ygap" "16"
+		"TextColor"	"255 170 0 220"
+		"PaintBackgroundType"	"2"
+	}
+
+	HudCredits
+	{
+		"fieldName"	"HudCredits"
+		"TextFont"	"Default"
+		"visible"	"1"
+		"xpos"	"0"
+		"ypos"	"0"
+		"wide"	"640"
+		"tall"	"480"
+		"TextColor"	"255 255 255 192"
+
+	}
+	
+	HUDAutoAim
+	{
+		"fieldName" "HUDAutoAim"
+		"visible" "1"
+		"enabled" "1"
+		"wide"	 "640"	[$WIN32]
+		"tall"	 "480"	[$WIN32]
+		"wide"	 "960"	[$X360]
+		"tall"	 "720"	[$X360]
+	}
+
+	HudCommentary
+	{
+		"fieldName" "HudCommentary"
+		"xpos"	"c-190"
+		"ypos"	"350"
+		"wide"	"380"
+		"tall"  "40"
+		"visible" "1"
+		"enabled" "1"
+		
+		"PaintBackgroundType"	"2"
+		
+		"bar_xpos"		"50"
+		"bar_ypos"		"20"
+		"bar_height"	"8"
+		"bar_width"		"320"
+		"speaker_xpos"	"50"
+		"speaker_ypos"	"8"
+		"count_xpos_from_right"	"10"	// Counts from the right side
+		"count_ypos"	"8"
+		
+		"icon_texture"	"materials/vgui/hud/icon_commentary.vmat"
+		"icon_xpos"		"0"
+		"icon_ypos"		"0"		
+		"icon_width"	"40"
+		"icon_height"	"40"
+	}
+	
+	HudHDRDemo
+	{
+		"fieldName" "HudHDRDemo"
+		"xpos"	"0"
+		"ypos"	"0"
+		"wide"	"640"
+		"tall"  "480"
+		"visible" "1"
+		"enabled" "1"
+		
+		"Alpha"	"255"
+		"PaintBackgroundType"	"2"
+		
+		"BorderColor"	"0 0 0 255"
+		"BorderLeft"	"16"
+		"BorderRight"	"16"
+		"BorderTop"		"16"
+		"BorderBottom"	"64"
+		"BorderCenter"	"0"
+		
+		"TextColor"		"255 255 255 255"
+		"LeftTitleY"	"422"
+		"RightTitleY"	"422"
+	}
+
+	AchievementNotificationPanel	
+	{
+		"fieldName"				"AchievementNotificationPanel"
+		"visible"				"1"
+		"enabled"				"1"
+		"xpos"					"0"
+		"ypos"					"180"
+		"wide"					"f10"	[$WIN32]
+		"wide"					"f60"	[$X360]
+		"tall"					"100"
+	}
+
+	CHudVote
+	{
+		"fieldName"		"CHudVote"
+		"xpos"			"0"			
+		"ypos"			"0"
+		"wide"			"640"
+		"tall"			"480"
+		"visible"		"1"
+		"enabled"		"1"
+		"bgcolor_override"	"0 0 0 0"
+		"PaintBackgroundType"	"0" // rounded corners
+	}	
+	AmpHudHealthGhost
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpHudHealthGhost"
+		"xpos"	"16"
+		"ypos"	"600"
+		"zpos"	"2"
+		"wide"	"120"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AlyxMPHud"
+		"labelText"	"g"
+		"fgcolor_override"	"170 102 39 51"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpHudHealthGlow1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpHudHealthGlow1"
+		"xpos"	"16"
+		"ypos"	"600"
+		"zpos"	"1"
+		"wide"	"120"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AlyxMPHud"
+		"labelText"	"p"
+		"fgcolor_override"	"255 92 0 58"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpHudHealthGlow2
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpHudHealthGlow2"
+		"xpos"	"16"
+		"ypos"	"600"
+		"zpos"	"1"
+		"wide"	"120"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AlyxMPHud"
+		"labelText"	"q"
+		"fgcolor_override"	"255 92 0 58"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpHudHealthGlow3
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpHudHealthGlow3"
+		"xpos"	"16"
+		"ypos"	"600"
+		"zpos"	"1"
+		"wide"	"120"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AlyxMPHud"
+		"labelText"	"r"
+		"fgcolor_override"	"255 92 0 58"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpHudPlusGlow
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpHudPlusGlow"
+		"xpos"	"16"
+		"ypos"	"600"
+		"zpos"	"1"
+		"wide"	"120"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AlyxMPHud"
+		"labelText"	"H"
+		"fgcolor_override"	"255 92 0 58"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpHudAmmoGhost
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpHudAmmoGhost"
+		"xpos"	"r140"
+		"ypos"	"600"
+		"zpos"	"2"
+		"wide"	"120"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AlyxMPHud"
+		"labelText"	"z"
+		"fgcolor_override"	"170 102 39 51"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpHudAmmoGlow1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpHudAmmoGlow1"
+		"xpos"	"r140"
+		"ypos"	"600"
+		"zpos"	"1"
+		"wide"	"120"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AlyxMPHud"
+		"labelText"	"a"
+		"fgcolor_override"	"255 92 0 58"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpHudAmmoGlow2
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpHudAmmoGlow2"
+		"xpos"	"r140"
+		"ypos"	"600"
+		"zpos"	"1"
+		"wide"	"120"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AlyxMPHud"
+		"labelText"	"A"
+		"fgcolor_override"	"255 92 0 58"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpHudBulletGlow
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpHudBulletGlow"
+		"xpos"	"r140"
+		"ypos"	"600"
+		"zpos"	"1"
+		"wide"	"120"
+		"tall"	"34"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AlyxMPHud"
+		"labelText"	"B"
+		"fgcolor_override"	"255 92 0 58"
+		"bgcolor_override"	"0 0 0 0"
+	}
+// ---- Alyx MP settings menu (tools/menu_hud/make_menu.py) ----
+	AmpMenuDim
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuDim"
+		"xpos"	"0"
+		"ypos"	"0"
+		"zpos"	"40"
+		"wide"	"f0"
+		"tall"	"f0"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuDesc"
+		"labelText"	""
+		"fgcolor_override"	"0 0 0 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTitle
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTitle"
+		"xpos"	"c-165"
+		"ypos"	"89"
+		"zpos"	"43"
+		"wide"	"300"
+		"tall"	"40"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuTitle"
+		"labelText"	"`SETTINGS`"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuRule1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuRule1"
+		"xpos"	"c-160"
+		"ypos"	"126"
+		"zpos"	"42"
+		"wide"	"320"
+		"tall"	"8"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxRule"
+		"labelText"	"d"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuRule2
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuRule2"
+		"xpos"	"c-160"
+		"ypos"	"341"
+		"zpos"	"42"
+		"wide"	"320"
+		"tall"	"8"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxRule"
+		"labelText"	"d"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLabel1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLabel1"
+		"xpos"	"c-163"
+		"ypos"	"137"
+		"zpos"	"43"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Auto reload`"
+		"fgcolor_override"	"238 230 212 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLit1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLit1"
+		"xpos"	"c-163"
+		"ypos"	"137"
+		"zpos"	"44"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Auto reload`"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuDesc1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuDesc1"
+		"xpos"	"c-162"
+		"ypos"	"150"
+		"zpos"	"43"
+		"wide"	"280"
+		"tall"	"14"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuDesc"
+		"labelText"	"`Guns reload by themselves when the magazine runs dry"
+		"fgcolor_override"	"176 156 124 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuRestart1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuRestart1"
+		"xpos"	"c-107"
+		"ypos"	"142"
+		"zpos"	"43"
+		"wide"	"60"
+		"tall"	"10"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuTag"
+		"labelText"	"`RESTART"
+		"fgcolor_override"	"190 140 60 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOff1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOff1"
+		"xpos"	"c+130"
+		"ypos"	"138"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"e"
+		"fgcolor_override"	"190 140 60 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOn1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOn1"
+		"xpos"	"c+130"
+		"ypos"	"138"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"f"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuKnob1
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuKnob1"
+		"xpos"	"c+138"
+		"ypos"	"138"
+		"zpos"	"45"
+		"wide"	"10"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"h"
+		"fgcolor_override"	"205 192 168 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLabel2
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLabel2"
+		"xpos"	"c-163"
+		"ypos"	"166"
+		"zpos"	"43"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Name tags`"
+		"fgcolor_override"	"238 230 212 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLit2
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLit2"
+		"xpos"	"c-163"
+		"ypos"	"166"
+		"zpos"	"44"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Name tags`"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuDesc2
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuDesc2"
+		"xpos"	"c-162"
+		"ypos"	"179"
+		"zpos"	"43"
+		"wide"	"280"
+		"tall"	"14"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuDesc"
+		"labelText"	"`Names over the other players' heads"
+		"fgcolor_override"	"176 156 124 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOff2
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOff2"
+		"xpos"	"c+130"
+		"ypos"	"168"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"e"
+		"fgcolor_override"	"190 140 60 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOn2
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOn2"
+		"xpos"	"c+130"
+		"ypos"	"168"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"f"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuKnob2
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuKnob2"
+		"xpos"	"c+138"
+		"ypos"	"168"
+		"zpos"	"45"
+		"wide"	"10"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"h"
+		"fgcolor_override"	"205 192 168 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLabel3
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLabel3"
+		"xpos"	"c-163"
+		"ypos"	"195"
+		"zpos"	"43"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Interaction dot`"
+		"fgcolor_override"	"238 230 212 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLit3
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLit3"
+		"xpos"	"c-163"
+		"ypos"	"195"
+		"zpos"	"44"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Interaction dot`"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuDesc3
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuDesc3"
+		"xpos"	"c-162"
+		"ypos"	"208"
+		"zpos"	"43"
+		"wide"	"280"
+		"tall"	"14"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuDesc"
+		"labelText"	"`A dot in the crosshair when E would do something"
+		"fgcolor_override"	"176 156 124 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOff3
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOff3"
+		"xpos"	"c+130"
+		"ypos"	"196"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"e"
+		"fgcolor_override"	"190 140 60 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOn3
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOn3"
+		"xpos"	"c+130"
+		"ypos"	"196"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"f"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuKnob3
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuKnob3"
+		"xpos"	"c+138"
+		"ypos"	"196"
+		"zpos"	"45"
+		"wide"	"10"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"h"
+		"fgcolor_override"	"205 192 168 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLabel4
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLabel4"
+		"xpos"	"c-163"
+		"ypos"	"224"
+		"zpos"	"43"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Turn carried objects`"
+		"fgcolor_override"	"238 230 212 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLit4
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLit4"
+		"xpos"	"c-163"
+		"ypos"	"224"
+		"zpos"	"44"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Turn carried objects`"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuDesc4
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuDesc4"
+		"xpos"	"c-162"
+		"ypos"	"237"
+		"zpos"	"43"
+		"wide"	"280"
+		"tall"	"14"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuDesc"
+		"labelText"	"`Hold right-click while carrying something and move the mouse"
+		"fgcolor_override"	"176 156 124 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOff4
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOff4"
+		"xpos"	"c+130"
+		"ypos"	"226"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"e"
+		"fgcolor_override"	"190 140 60 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOn4
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOn4"
+		"xpos"	"c+130"
+		"ypos"	"226"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"f"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuKnob4
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuKnob4"
+		"xpos"	"c+138"
+		"ypos"	"226"
+		"zpos"	"45"
+		"wide"	"10"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"h"
+		"fgcolor_override"	"205 192 168 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLabel5
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLabel5"
+		"xpos"	"c-163"
+		"ypos"	"253"
+		"zpos"	"43"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Player list`"
+		"fgcolor_override"	"238 230 212 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLit5
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLit5"
+		"xpos"	"c-163"
+		"ypos"	"253"
+		"zpos"	"44"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Player list`"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuDesc5
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuDesc5"
+		"xpos"	"c-162"
+		"ypos"	"266"
+		"zpos"	"43"
+		"wide"	"280"
+		"tall"	"14"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuDesc"
+		"labelText"	"`Who's playing and how far away they are, top left"
+		"fgcolor_override"	"176 156 124 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOff5
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOff5"
+		"xpos"	"c+130"
+		"ypos"	"254"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"e"
+		"fgcolor_override"	"190 140 60 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOn5
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOn5"
+		"xpos"	"c+130"
+		"ypos"	"254"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"f"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuKnob5
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuKnob5"
+		"xpos"	"c+138"
+		"ypos"	"254"
+		"zpos"	"45"
+		"wide"	"10"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"h"
+		"fgcolor_override"	"205 192 168 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLabel6
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLabel6"
+		"xpos"	"c-163"
+		"ypos"	"282"
+		"zpos"	"43"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Chat messages`"
+		"fgcolor_override"	"238 230 212 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLit6
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLit6"
+		"xpos"	"c-163"
+		"ypos"	"282"
+		"zpos"	"44"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Chat messages`"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuDesc6
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuDesc6"
+		"xpos"	"c-162"
+		"ypos"	"295"
+		"zpos"	"43"
+		"wide"	"280"
+		"tall"	"14"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuDesc"
+		"labelText"	"`Chat and session messages on the left of the screen"
+		"fgcolor_override"	"176 156 124 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOff6
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOff6"
+		"xpos"	"c+130"
+		"ypos"	"284"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"e"
+		"fgcolor_override"	"190 140 60 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOn6
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOn6"
+		"xpos"	"c+130"
+		"ypos"	"284"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"f"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuKnob6
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuKnob6"
+		"xpos"	"c+138"
+		"ypos"	"284"
+		"zpos"	"45"
+		"wide"	"10"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"h"
+		"fgcolor_override"	"205 192 168 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLabel7
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLabel7"
+		"xpos"	"c-163"
+		"ypos"	"311"
+		"zpos"	"43"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Loading zone outlines`"
+		"fgcolor_override"	"238 230 212 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuLit7
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuLit7"
+		"xpos"	"c-163"
+		"ypos"	"311"
+		"zpos"	"44"
+		"wide"	"260"
+		"tall"	"30"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuLabel"
+		"labelText"	"`Loading zone outlines`"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuDesc7
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuDesc7"
+		"xpos"	"c-162"
+		"ypos"	"324"
+		"zpos"	"43"
+		"wide"	"280"
+		"tall"	"14"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuDesc"
+		"labelText"	"`Mark the spots where everyone gathers to change level"
+		"fgcolor_override"	"176 156 124 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOff7
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOff7"
+		"xpos"	"c+130"
+		"ypos"	"312"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"e"
+		"fgcolor_override"	"190 140 60 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuTrackOn7
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuTrackOn7"
+		"xpos"	"c+130"
+		"ypos"	"312"
+		"zpos"	"43"
+		"wide"	"37"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"f"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuKnob7
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuKnob7"
+		"xpos"	"c+138"
+		"ypos"	"312"
+		"zpos"	"45"
+		"wide"	"10"
+		"tall"	"24"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxSwitch"
+		"labelText"	"h"
+		"fgcolor_override"	"205 192 168 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuChips
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuChips"
+		"xpos"	"c-16"
+		"ypos"	"352"
+		"zpos"	"43"
+		"wide"	"35"
+		"tall"	"12"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxFoot"
+		"labelText"	"i"
+		"fgcolor_override"	"243 186 10 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+	AmpMenuHints
+	{
+		"ControlName"	"Label"
+		"fieldName"	"AmpMenuHints"
+		"xpos"	"c-16"
+		"ypos"	"352"
+		"zpos"	"43"
+		"wide"	"35"
+		"tall"	"12"
+		"visible"	"1"
+		"enabled"	"1"
+		"textAlignment"	"north-west"
+		"PaintBackgroundType"	"0"
+		"font"	"AmpMenuFxFoot"
+		"labelText"	"j"
+		"fgcolor_override"	"176 156 124 0"
+		"bgcolor_override"	"0 0 0 0"
+	}
+// ---- end of the settings menu ----
+}

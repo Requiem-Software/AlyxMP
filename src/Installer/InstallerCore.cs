@@ -208,6 +208,9 @@ namespace AlyxMP
                 novrFiles = File.ReadAllLines(ModFiles.NoVRFileList(hla)).Where(l => l.Trim().Length > 0).ToList();
 
             DeleteDir(ModFiles.ScriptsDir(hla));
+            // the other players' avatar: its model and animation graph
+            DeleteDir(Path.Combine(GamePaths.Hlvr(hla), "models", "alyxmp"));
+            try { File.Delete(Path.Combine(GamePaths.Hlvr(hla), "animgraphs", "alyxmp_avatar.vanmgrph_c")); } catch (Exception) { }
             ModFiles.RemoveHook(hla);
             ModFiles.RemoveNoVRUseHook(hla);
             ModFiles.RemoveHud(hla);

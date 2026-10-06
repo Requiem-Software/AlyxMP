@@ -21,9 +21,8 @@ namespace AlyxMP
         public string GameDir = "";
         public bool AutoUpdate;             // install new versions by themselves (Updater)
 
-        // in-game settings menu (F10)
+        // in-game settings menu (ESC)
         public bool AutoReload = true;      // NoVR: guns reload by themselves when the magazine runs dry
-        public bool Hl2Hud = true;          // NoVR: Half-Life 2's HUD instead of NoVR's own
         public bool NameTags = true;
         public bool InteractDot = true;
         public bool TurnCarried = true;     // NoVR: hold the right mouse button to turn what you carry
@@ -55,7 +54,6 @@ namespace AlyxMP
                 if (d.TryGetValue("gamedir", out v)) s.GameDir = v;
                 if (d.TryGetValue("autoupdate", out v)) s.AutoUpdate = v == "1";
                 if (d.TryGetValue("autoreload", out v)) s.AutoReload = v == "1";
-                if (d.TryGetValue("hl2hud", out v)) s.Hl2Hud = v == "1";
                 if (d.TryGetValue("nametags", out v)) s.NameTags = v == "1";
                 if (d.TryGetValue("interactdot", out v)) s.InteractDot = v == "1";
                 if (d.TryGetValue("turncarried", out v)) s.TurnCarried = v == "1";
@@ -79,6 +77,25 @@ namespace AlyxMP
             yield return new KeyValuePair<string, string>("autoreload", AutoReload ? "1" : "0");
         }
 
+        /// <summary>A switch flipped in the in-game settings menu (an amp_cfg key, as GameConfig sends them).</summary>
+        public bool SetFromGame(string key, string value)
+        {
+            bool on = value == "1";
+            switch (key)
+            {
+                case "tags": NameTags = on; break;
+                case "dot": InteractDot = on; break;
+                case "turn": TurnCarried = on; break;
+                case "list": PlayerList = on; break;
+                case "feed": ChatFeed = on; break;
+                case "zones": ZoneOutlines = on; break;
+                case "autoreload": AutoReload = on; break;
+                default: return false;
+            }
+            Save();
+            return true;
+        }
+
         public void Save()
         {
             try
@@ -97,7 +114,6 @@ namespace AlyxMP
                     "gamedir=" + GameDir,
                     "autoupdate=" + (AutoUpdate ? "1" : "0"),
                     "autoreload=" + (AutoReload ? "1" : "0"),
-                    "hl2hud=" + (Hl2Hud ? "1" : "0"),
                     "nametags=" + (NameTags ? "1" : "0"),
                     "interactdot=" + (InteractDot ? "1" : "0"),
                     "turncarried=" + (TurnCarried ? "1" : "0"),

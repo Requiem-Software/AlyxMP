@@ -58,6 +58,8 @@ namespace AlyxMP
         public event Action<string> SaveWritten;      // full path of a save that just finished
         public event Action<string> SaveLoaded;       // a save was restored (death reload, manual load...); arg = map
         public event Action<string> World;            // world-sync payload from the in-game mod
+        public event Action<bool> Menu;               // the in-game settings menu opened / closed
+        public event Action<string, string> Setting;  // a switch in that menu was flipped: amp_cfg key, value
 
         readonly string hla;
         readonly VConClient vcon;
@@ -185,6 +187,12 @@ namespace AlyxMP
                     break;
                 case "err":
                     Log?.Invoke("[mod] " + rest);
+                    break;
+                case "menu":
+                    Menu?.Invoke(p[0] == "1");
+                    break;
+                case "cfg":
+                    if (p.Length == 2 && (p[1] == "0" || p[1] == "1")) Setting?.Invoke(p[0], p[1]);
                     break;
                 case "w":
                     var world = Clean.World(rest);

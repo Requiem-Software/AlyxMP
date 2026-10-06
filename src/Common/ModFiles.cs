@@ -13,7 +13,7 @@ namespace AlyxMP
     /// </summary>
     static class ModFiles
     {
-        public const string Version = "0.5.3";
+        public const string Version = "0.6.0";
         public const string HookLine = "script_reload_code alyxmp/main";
         public const string NoVRHookLine = "script_reload_code novr";
         public const string NoVRZipUrl = "https://github.com/HLANoVR/HLA-NoVR/archive/refs/heads/main.zip";
@@ -106,30 +106,50 @@ namespace AlyxMP
             if (cleaned != text) File.WriteAllText(gi, cleaned);
         }
 
-        // ---------------------------------------------------------------- HL2-style HUD for NoVR
-        // game/alyxmp_hud holds NoVR's HUD files with Half-Life 2's exact layout, colours and fonts.
+        // ---------------------------------------------------------------- the HUD for NoVR
+        // game/alyxmp_glowhud holds NoVR's HUD files restyled (glowing numbers, no boxes) and the fonts they use
+        // (tools/make_glow_hud.py builds both). NoVR's own HUD files sit in its VPK and the game takes a
+        // packed file over a loose one, so ours go into a VPK too. Fonts are the other way round: the
+        // game only picks them up loose, from panorama/fonts. All of it is read when the game starts.
+        // It's always on; older versions also had a Half-Life 2 style HUD in game/alyxmp_hud, which goes.
 
-        public static string HudDir(string hla) => Path.Combine(hla, "game", "alyxmp_hud");
-        const string HudFolder = "alyxmp_hud";
+        public static string GlowHudDir(string hla) => Path.Combine(hla, "game", "alyxmp_glowhud");
+        const string GlowHudFolder = "alyxmp_glowhud";
+        const string OldHudFolder = "alyxmp_hud";
 
-        public static void EnsureHud(string hla) => SetHud(hla, true);
-
-        /// <summary>Mount (or unmount) the Half-Life 2 HUD; the game reads it when it starts.</summary>
-        public static void SetHud(string hla, bool on)
+        /// <summary>Mount the glow HUD (and take away the old Half-Life 2 one).</summary>
+        public static void EnsureHud(string hla)
         {
-            if (!on || !Directory.Exists(HudDir(hla)))
+            RemoveOldHud(hla);
+            var dir = GlowHudDir(hla);
+            var files = new Dictionary<string, byte[]>();
+            foreach (var sub in new[] { "scripts", "resource" })
             {
-                Unmount(hla, HudFolder);
+                if (!Directory.Exists(Path.Combine(dir, sub))) continue;
+                foreach (var f in Directory.GetFiles(Path.Combine(dir, sub)))
+                    files[sub + "/" + Path.GetFileName(f).ToLowerInvariant()] = File.ReadAllBytes(f);
+            }
+            if (files.Count == 0)
+            {
+                Unmount(hla, GlowHudFolder);
                 return;
             }
-            MountFirst(hla, HudFolder);
-            UseHl2Font(hla);
+            Vpk.Write(Path.Combine(dir, "pak01_dir.vpk"), files);
+            MountFirst(hla, GlowHudFolder);
+        }
+
+        static void RemoveOldHud(string hla)
+        {
+            Unmount(hla, OldHudFolder);
+            var dir = Path.Combine(hla, "game", OldHudFolder);
+            try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch (Exception) { }
         }
 
         public static void RemoveHud(string hla)
         {
-            Unmount(hla, HudFolder);
-            try { if (Directory.Exists(HudDir(hla))) Directory.Delete(HudDir(hla), true); } catch (Exception) { }
+            RemoveOldHud(hla);
+            Unmount(hla, GlowHudFolder);
+            try { if (Directory.Exists(GlowHudDir(hla))) Directory.Delete(GlowHudDir(hla), true); } catch (Exception) { }
         }
 
         // ---------------------------------------------------------------- auto reload for NoVR
@@ -172,28 +192,6 @@ namespace AlyxMP
         {
             Unmount(hla, AutoReloadFolder);
             try { if (Directory.Exists(AutoReloadDir(hla))) Directory.Delete(AutoReloadDir(hla), true); } catch (Exception) { }
-        }
-
-        /// <summary>
-        /// HL2's HUD digits come from its HALFLIFE2.ttf; NoVR maps that font name to HL:A's own font, whose
-        /// digits are hearts. If Half-Life 2 is installed, use its font file from there.
-        /// </summary>
-        static void UseHl2Font(string hla)
-        {
-            var scheme = Path.Combine(HudDir(hla), "resource", "clientscheme.res");
-            if (!File.Exists(scheme)) return;
-            string font = null;
-            foreach (var lib in GamePaths.LibraryFolders())
-            {
-                var f = Path.Combine(lib, "steamapps", "common", "Half-Life 2", "hl2", "resource", "halflife2.ttf");
-                if (File.Exists(f)) { font = f; break; }
-            }
-            if (font == null) return;
-            var copy = Path.Combine(HudDir(hla), "resource", "hl2_halflife2.ttf");
-            try { File.Copy(font, copy, true); } catch (IOException) { return; }
-            var text = File.ReadAllText(scheme);
-            var patched = text.Replace("\"resource/HALFLIFE2.vfont\"", "\"resource/hl2_halflife2.ttf\"");
-            if (patched != text) File.WriteAllText(scheme, patched);
         }
 
         static string UseExtra(string hla) => Path.Combine(GamePaths.Hlvr(hla), "scripts", "vscripts", "useextra.lua");

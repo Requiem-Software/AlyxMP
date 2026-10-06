@@ -9,7 +9,7 @@
     <RootNamespace>AlyxMP</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\assets\alyxmp.ico</ApplicationIcon>
-    <Version>0.5.3</Version>
+    <Version>0.6.0</Version>
     <Product>Alyx Multiplayer</Product>
     <Description>Alyx Multiplayer launcher</Description>
     <Copyright>Fan-made mod, not affiliated with Valve</Copyright>
