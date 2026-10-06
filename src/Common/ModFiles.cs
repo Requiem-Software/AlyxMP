@@ -112,7 +112,14 @@ namespace AlyxMP
         public static string HudDir(string hla) => Path.Combine(hla, "game", "alyxmp_hud");
         const string HudFolder = "alyxmp_hud";
 
-        public static void EnsureHud(string hla) => SetHud(hla, true);
+        public static void EnsureHud(string hla) => SetHuds(hla, true, false);
+
+        /// <summary>Which HUD NoVR gets: the glow one, the Half-Life 2 style one, or its own.</summary>
+        public static void SetHuds(string hla, bool glow, bool hl2)
+        {
+            SetGlowHud(hla, glow);
+            SetHud(hla, hl2 && !glow);
+        }
 
         /// <summary>Mount (or unmount) the Half-Life 2 HUD; the game reads it when it starts.</summary>
         public static void SetHud(string hla, bool on)
@@ -130,6 +137,37 @@ namespace AlyxMP
         {
             Unmount(hla, HudFolder);
             try { if (Directory.Exists(HudDir(hla))) Directory.Delete(HudDir(hla), true); } catch (Exception) { }
+            Unmount(hla, GlowHudFolder);
+            try { if (Directory.Exists(GlowHudDir(hla))) Directory.Delete(GlowHudDir(hla), true); } catch (Exception) { }
+        }
+
+        // ---------------------------------------------------------------- glow HUD for NoVR
+        // game/alyxmp_glowhud holds NoVR's HUD files restyled (glowing numbers, no boxes) and the fonts they use
+        // (tools/make_glow_hud.py builds both). NoVR's own HUD files sit in its VPK and the game takes a
+        // packed file over a loose one, so ours go into a VPK too. Fonts are the other way round: the
+        // game only picks them up loose, from panorama/fonts. All of it is read when the game starts.
+
+        public static string GlowHudDir(string hla) => Path.Combine(hla, "game", "alyxmp_glowhud");
+        const string GlowHudFolder = "alyxmp_glowhud";
+
+        public static void SetGlowHud(string hla, bool on)
+        {
+            var dir = GlowHudDir(hla);
+            var files = new Dictionary<string, byte[]>();
+            if (on)
+                foreach (var sub in new[] { "scripts", "resource" })
+                {
+                    if (!Directory.Exists(Path.Combine(dir, sub))) continue;
+                    foreach (var f in Directory.GetFiles(Path.Combine(dir, sub)))
+                        files[sub + "/" + Path.GetFileName(f).ToLowerInvariant()] = File.ReadAllBytes(f);
+                }
+            if (files.Count == 0)
+            {
+                Unmount(hla, GlowHudFolder);
+                return;
+            }
+            Vpk.Write(Path.Combine(dir, "pak01_dir.vpk"), files);
+            MountFirst(hla, GlowHudFolder);
         }
 
         // ---------------------------------------------------------------- auto reload for NoVR

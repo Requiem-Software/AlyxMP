@@ -117,7 +117,7 @@ namespace AlyxMP
                 if (ModFiles.NoVRInstalled(hla))
                 {
                     ModFiles.SetAutoReload(hla, settings.AutoReload);
-                    ModFiles.SetHud(hla, settings.Hl2Hud);
+                    ModFiles.SetHuds(hla, settings.GlowHud, settings.Hl2Hud);
                 }
             }
             catch (Exception e)
@@ -443,7 +443,7 @@ namespace AlyxMP
                 {
                     ModFiles.EnsureNoVRSearchPaths(hla);
                     ModFiles.EnsureNoVRUseHook(hla);
-                    ModFiles.SetHud(hla, settings.Hl2Hud);
+                    ModFiles.SetHuds(hla, settings.GlowHud, settings.Hl2Hud);
                     ModFiles.SetAutoReload(hla, settings.AutoReload);
                 }
             }

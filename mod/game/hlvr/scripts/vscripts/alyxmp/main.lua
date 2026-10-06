@@ -956,6 +956,7 @@ local function localShot()
     local now = Time()
     if now - A.lastShotEmit < 0.04 then return end
     A.lastShotEmit = now
+    A.hudFullMag = false
     if not mpActive() then return end
     local w = currentWeapon(now)
     if w == 0 then w = A.vrWeapon end
@@ -1172,6 +1173,8 @@ local function watchViewModelShots(now)
     -- auto reload (settings menu): when the gun reloads by itself, come out of aim-down-sights the way
     -- NoVR's reload key does
     if A.cfg.autoreload == "1" and seq ~= A.vmSeq and seq:find("reload") then SendToConsole("novr_resetads") end
+    -- a finished reload: the magazine is full (the HUD's glow goes by this, see updateGlowHud)
+    if (A.vmSeq or ""):find("reload") and not seq:find("reload") then A.hudFullMag = true end
     A.vmSeq, A.vmCycle = seq, cyc
 end
 
@@ -1469,6 +1472,41 @@ listen("physgun_pickup", function(info) if A.World and info.entindex and mpActiv
 listen("player_shoot", function() localShot() end)
 
 ---------------------------------------------------------------------------------------------------
+-- Glow HUD (NoVR). The game draws the numbers, the dots and the icons itself. What it
+-- can't draw (the glow and the dim placeholder zeros) are labels that wait off the
+-- screen until an event in the HUD's hudanimations.txt moves them in:
+--   AmpHealth1 / 2 / 3   the health has that many digits (this also right-aligns it), AmpHealthOff
+--   AmpAmmoOn1 / 2       a gun is out, its magazine count has that many digits, AmpAmmoOff
+-- We run the ones that fit what the game is showing, and again every two seconds because a new
+-- level or a reloaded HUD starts with everything hidden. Without that HUD the events don't exist
+-- and nothing happens.
+
+local function updateGlowHud(now, p)
+    if IS_VR then return end
+    local health, ammo = "Off", "Off"
+    local hp = p:GetHealth()
+    local hide = Convars:GetInt("hidehud") or 0
+    local gun = currentWeapon(now)
+    if gun ~= A.hudGun then A.hudGun, A.hudFullMag = gun, false end
+    -- hidehud 4: everything, 8: health and ammo, 32: "needs the suit" (NoVR's menu and cutscenes)
+    if hp > 0 and not (bit(hide, 4) or bit(hide, 8) or bit(hide, 32)) and Convars:GetInt("r_drawvgui") ~= 0 then
+        health = hp >= 100 and "3" or hp >= 10 and "2" or "1"
+        -- the ammo count shows for the guns; hidehud 1 hides it along with the weapon selection
+        if gun ~= 0 and not bit(hide, 1) then
+            -- Lua can't read the count, so go by the magazines: the SMG's 30 rounds are mostly two
+            -- digits, the shotgun's 6 always one, the pistol's 10 only from a reload to the next shot
+            ammo = (gun == 3 or (gun == 1 and A.hudFullMag)) and "On2" or "On1"
+        end
+    end
+    local state = health .. ammo
+    if state == A.glowHud and now < (A.nextGlowHud or 0) then return end
+    A.glowHud = state
+    A.nextGlowHud = now + 2
+    SendToConsole("testhudanim AmpHealth" .. health)
+    SendToConsole("testhudanim AmpAmmo" .. ammo)
+end
+
+---------------------------------------------------------------------------------------------------
 -- main loop
 
 local lastTick = Time()
@@ -1478,6 +1516,7 @@ local function tick()
     lastTick = now
     local p = Entities:GetLocalPlayer()
     if p then
+        updateGlowHud(now, p)
         hookNoVRFire(now, p)
         updateCarry(p, now)
         watchViewModelShots(now)

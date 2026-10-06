@@ -23,7 +23,8 @@ namespace AlyxMP
 
         // in-game settings menu (F10)
         public bool AutoReload = true;      // NoVR: guns reload by themselves when the magazine runs dry
-        public bool Hl2Hud = true;          // NoVR: Half-Life 2's HUD instead of NoVR's own
+        public bool GlowHud = true;           // NoVR: the glow HUD instead of NoVR's own      
+        public bool Hl2Hud = false;         // NoVR: or Half-Life 2's (one of the two at most)
         public bool NameTags = true;
         public bool InteractDot = true;
         public bool TurnCarried = true;     // NoVR: hold the right mouse button to turn what you carry
@@ -55,7 +56,12 @@ namespace AlyxMP
                 if (d.TryGetValue("gamedir", out v)) s.GameDir = v;
                 if (d.TryGetValue("autoupdate", out v)) s.AutoUpdate = v == "1";
                 if (d.TryGetValue("autoreload", out v)) s.AutoReload = v == "1";
-                if (d.TryGetValue("hl2hud", out v)) s.Hl2Hud = v == "1";
+                // one HUD at most; a settings file from before the glow HUD gets that one
+                if (d.TryGetValue("glowhud", out v))
+                {
+                    s.GlowHud = v == "1";
+                    if (d.TryGetValue("hl2hud", out v)) s.Hl2Hud = v == "1" && !s.GlowHud;
+                }
                 if (d.TryGetValue("nametags", out v)) s.NameTags = v == "1";
                 if (d.TryGetValue("interactdot", out v)) s.InteractDot = v == "1";
                 if (d.TryGetValue("turncarried", out v)) s.TurnCarried = v == "1";
@@ -97,6 +103,7 @@ namespace AlyxMP
                     "gamedir=" + GameDir,
                     "autoupdate=" + (AutoUpdate ? "1" : "0"),
                     "autoreload=" + (AutoReload ? "1" : "0"),
+                    "glowhud=" + (GlowHud ? "1" : "0"),
                     "hl2hud=" + (Hl2Hud ? "1" : "0"),
                     "nametags=" + (NameTags ? "1" : "0"),
                     "interactdot=" + (InteractDot ? "1" : "0"),

@@ -34,7 +34,7 @@ needs to open TCP port 27420 on their router, or you can all use a VPN like Tail
 
 - Enemies are run by the host's game: everyone sees them in the same place, going after the same player,
   with the same health, and they die for everyone at once.
-- Alyx MP adds a few small things to NoVR: a Half-Life 2 style HUD, auto reload and one line in its
+- Alyx MP adds a few small things to NoVR: a new HUD, auto reload and one line in its
   interaction script. Uninstalling removes them.
 - The launcher tells you when there's a new version: click **Update** at the top, or tick
   **Update automatically** under *update log*.

@@ -38,8 +38,10 @@ namespace AlyxMP
 
             Add("Auto reload", "Guns reload by themselves when the magazine runs dry",
                 () => settings.AutoReload, v => settings.AutoReload = v, restart: true, novr: true);
+            Add("Glow HUD", "Glowing health and ammo numbers, no boxes",
+                () => settings.GlowHud, v => { settings.GlowHud = v; if (v) settings.Hl2Hud = false; }, restart: true, novr: true);
             Add("Half-Life 2 HUD", "Health, suit and ammo the way Half-Life 2 shows them",
-                () => settings.Hl2Hud, v => settings.Hl2Hud = v, restart: true, novr: true);
+                () => settings.Hl2Hud, v => { settings.Hl2Hud = v; if (v) settings.GlowHud = false; }, restart: true, novr: true);
             Add("Name tags", "Names over the other players' heads",
                 () => settings.NameTags, v => settings.NameTags = v);
             Add("Interaction dot", "A dot in the crosshair when E would do something",
