@@ -21,7 +21,8 @@
 --                                  it is, and the Position output that goes with it (or "-")
 --   nh  ref hp                     host: an enemy's health
 --   np  ref x y z yaw              host: an enemy's position
---   nd  ref damage                 a player hurt an enemy in their world - the host applies it
+--   ne  ref id                     host: which player an enemy is after (-1: nobody)
+--   nd  ref damage x y z           a player hurt an enemy in their world - the host applies it
 --   sh  weapon x y z hit nx ny nz  the sender's shot landed there - draw a tracer and impact
 --   J   <any of the above>         catch-up replay after loading the level fresh (VR joining a NoVR
 --                                  host): applied in order, without the duplicate checks
@@ -40,7 +41,9 @@ local STATIC_NPCS = { npc_barnacle = true, npc_turret_floor = true }
 -- enemies that go after the other players' avatars too (each avatar carries an invisible target)
 local HOSTILE_NPCS = { "npc_combine_s", "npc_zombie", "npc_antlion", "npc_headcrab", "npc_headcrab_black",
     "npc_headcrab_runner", "npc_headcrab_armored", "npc_headcrab_fast", "npc_manhack", "npc_turret_floor" }
-local TARGET_NAME = "amp_target"
+local TARGET_PREFIX = "amp_target"   -- + "_<player id>", the avatars' bullseyes (main.lua)
+local HOSTILE_SET = {}
+for _, c in ipairs(HOSTILE_NPCS) do HOSTILE_SET[c] = true end
 -- picked up by one player, gone for everyone; but using one never gives it to the others
 local CONSUMABLE_PREFIXES = { "item_hlvr_clip", "item_hlvr_crafting_currency", "item_healthvial", "item_hlvr_grenade",
     "item_item_crate", "item_hlvr_prop_ammobag" }
@@ -68,8 +71,11 @@ local CLAIM_RANGE = 200       -- a guest only takes over objects that start movi
                               -- further off was moved by an enemy or an explosion, and the host streams that
 local NPC_POS_STEP = 24       -- host sends an enemy's position when it moved this far...
 local NPC_YAW_STEP = 25       -- ...or turned this much
-local NPC_TELEPORT = 360      -- clients snap enemies that are further off than this
-local NPC_STEER = 120         -- and walk them back when they're further off than this
+local NPC_TELEPORT = 240      -- clients snap enemies that are further off than this
+local NPC_STEER = 56          -- and walk them to the host's spot when they're further off than this
+local NPC_STEER_EVERY = 0.6   -- (re-issued at most this often, or when the spot moved on)
+local NPC_HIT_MEMORY = 2.5    -- an enemy that just hit an avatar is after that player
+local NPC_TARGET_RESEND = 3
 local NPC_MATCH = 400         -- an enemy we can't find by its ref: the nearest one of its kind this close
 local REF_TOLERANCE = 64      -- how far apart two games' first sightings of the same entity may be
 local NPC_TOLERANCE = 200     -- enemies are often first seen a moment after they spawn and start moving
@@ -248,7 +254,7 @@ end
 local function ours(e)
     local name = e:GetName()
     return name == "amp_pp" or name == "amp_hud" or name == "alyxmp_core" or name == "alyxmp_precache"
-        or name == TARGET_NAME or name == "amp_rel"
+        or name:sub(1, #TARGET_PREFIX) == TARGET_PREFIX or name == "amp_rel" or name == "amp_rel2"
 end
 
 -- stamp everything that exists, so later sightings (and refs from the others) can find it
@@ -950,11 +956,24 @@ local function onShot(from, weapon, pos, hit, normal)
 end
 
 ---------------------------------------------------------------------------------------------------
--- enemies: everyone keeps their own (native AI and animation); the host's copy is the reference for
--- health and position, and damage anyone deals is applied on the host
+-- enemies: the host's game decides. Every game keeps its own copy of each enemy (so it moves, shoots,
+-- talks and dies with the game's own animation and sound), but the copies follow the host's: where it
+-- is, who it's after, how much health it has and when it dies.
+--   host:    nh (health), np (position), ne (which player it's after: an id, or -1 for nobody)
+--   clients: their copy is steered to the host's spot and set on the same player; damage they deal
+--            goes to the host (nd) and counts as coming from their avatar
 
 local function isNpc(e)
     return e.IsNPC and e:IsNPC() and not SKIP_NPCS[e:GetClassname()] and not ours(e)
+end
+
+local function npcRec(e)
+    local rec = W.npcs[e]
+    if not rec then
+        rec = {}
+        W.npcs[e] = rec
+    end
+    return rec
 end
 
 local function refreshNpcList()
@@ -968,40 +987,97 @@ local function refreshNpcList()
 end
 
 -- enemies spawned mid-game are stamped (named) where they appear, before they walk off: every game
--- then names them alike
+-- then names them alike. They also report when they find or lose an enemy (the host uses that).
 local function stampNewNpcs()
     for _, class in ipairs(HOSTILE_NPCS) do
         for _, e in ipairs(Entities:FindAllByClassname(class)) do
             if not W.info[e] and not ours(e) then infoOf(e) end
+            if e:Attribute_GetIntValue("amp_ne", 0) == 0 then
+                e:Attribute_SetIntValue("amp_ne", 1)
+                e:RedirectOutput("OnFoundEnemy", "AMP_NpcFoundEnemy", e)
+                e:RedirectOutput("OnLostEnemy", "AMP_NpcLostEnemy", e)
+            end
         end
     end
 end
 
 -- every game's enemies also go after the other players' avatars: each avatar carries an invisible
--- npc_bullseye named amp_target (main.lua) and these always-on relationships cover enemies and avatars
--- that appear later too
+-- npc_bullseye named amp_target_<id> (main.lua) and these always-on relationships cover enemies and
+-- avatars that appear later too. (0.5.0/0.5.1 saves carry amp_rel ones aimed at the old single name.)
 local function ensureRelationships()
-    if Entities:FindByName(nil, "amp_rel") then return end
+    if Entities:FindByName(nil, "amp_rel2") then return end
+    for _, old in ipairs(Entities:FindAllByName("amp_rel")) do old:Kill() end
     for _, class in ipairs(HOSTILE_NPCS) do
         local rel = SpawnEntityFromTableSynchronous("ai_relationship", {
-            targetname = "amp_rel", subject = class, target = TARGET_NAME, disposition = 1, rank = 0,
+            targetname = "amp_rel2", subject = class, target = TARGET_PREFIX .. "*", disposition = 1, rank = 0,
             StartActive = 1, Reciprocal = 0,
         })
         if rel then DoEntFireByInstanceHandle(rel, "ApplyRelationship", "", 0.1, nil, nil) end
     end
 end
 
+function AMP_NpcFoundEnemy(self)
+    if AMP and AMP.World and AMP.World.NpcCombat and self and IsValidEntity(self) then AMP.World.NpcCombat(self, true) end
+end
+
+function AMP_NpcLostEnemy(self)
+    if AMP and AMP.World and AMP.World.NpcCombat and self and IsValidEntity(self) then AMP.World.NpcCombat(self, false) end
+end
+
+-- an avatar's bullseye was hit: whatever hit it is after that player
+function AMP_AvatarHit(self, args)
+    if AMP and AMP.World and AMP.World.AvatarHit and self and IsValidEntity(self) then
+        AMP.World.AvatarHit(self, args and args.activator)
+    end
+end
+
+function W.NpcCombat(e, on)
+    npcRec(e).combat = on
+end
+
+function W.AvatarHit(bullseye, attacker)
+    if not attacker or not IsValidEntity(attacker) or not isNpc(attacker) then return end
+    local id = tonumber((bullseye:GetName() or ""):match("_(%d+)$") or "")
+    if not id then return end
+    local rec = npcRec(attacker)
+    rec.hitBy, rec.hitAt = id, Time()
+end
+
+-- Which player the host's enemy is after. What it last hit tells for sure; otherwise, once it's in a
+-- fight, it's the player it faces (soldiers aim at their enemy, zombies and headcrabs face where they go).
+local function npcTarget(e, rec, now)
+    if rec.hitBy and now - (rec.hitAt or -100) < NPC_HIT_MEMORY then return rec.hitBy end
+    if not rec.combat then return -1 end
+    local fwd = e:GetForwardVector()
+    local fl = math.max(math.sqrt(fwd.x * fwd.x + fwd.y * fwd.y), 0.001)
+    local eye = e:EyePosition()
+    local best, bestScore = nil, nil
+    local function consider(id, pos)
+        local d = pos - eye
+        local flat = math.sqrt(d.x * d.x + d.y * d.y)
+        if flat < 1 or flat > 3000 then return end
+        local facing = (fwd.x * d.x + fwd.y * d.y) / (flat * fl)
+        if facing < 0.7 then return end   -- more than ~45 degrees off
+        local score = (1 - facing) * 4 + flat / 1500
+        if not bestScore or score < bestScore then best, bestScore = id, score end
+    end
+    local p = Entities:GetLocalPlayer()
+    if p and p:GetHealth() > 0 then consider(myId(), p:EyePosition()) end
+    for id, pp in pairs(A.puppets or {}) do
+        if pp.target and IsValidEntity(pp.target) then consider(id, pp.target:GetOrigin()) end
+    end
+    if best then return best end
+    return rec.target or -1   -- turning between targets: keep the last one
+end
+
 local function hostSendNpcs(now)
     for _, e in ipairs(W.npcList) do
         if IsValidEntity(e) and e:IsAlive() then
-            local rec = W.npcs[e]
-            if not rec then
-                rec = {}
-                W.npcs[e] = rec
-            end
+            local rec = npcRec(e)
+            local ref = refOf(e)
             local hp = e:GetHealth()
             if hp ~= rec.hp then
-                send("nh", refOf(e), hp)
+                send("nh", ref, hp)
                 rec.hp = hp
             end
             if not STATIC_NPCS[e:GetClassname()] then
@@ -1009,8 +1085,16 @@ local function hostSendNpcs(now)
                 local yaw = e:GetAngles().y
                 if not rec.pos or (o - rec.pos):Length() > NPC_POS_STEP or math.abs(angDiff(yaw, rec.yaw or yaw)) > NPC_YAW_STEP
                     or (now - (rec.posAt or 0) > 2 and (o - rec.pos):Length() > 4) then
-                    send("np", refOf(e), f1(o.x), f1(o.y), f1(o.z), f1(yaw))
+                    send("np", ref, f1(o.x), f1(o.y), f1(o.z), f1(yaw))
                     rec.pos, rec.yaw, rec.posAt = o, yaw, now
+                end
+            end
+            if HOSTILE_SET[e:GetClassname()] then
+                local t = npcTarget(e, rec, now)
+                -- repeated now and then while it's after someone (a client may have just met it)
+                if t ~= rec.target or (t ~= -1 and now - (rec.targetAt or -100) > NPC_TARGET_RESEND) then
+                    send("ne", ref, t)
+                    rec.target, rec.targetAt = t, now
                 end
             end
         end
@@ -1021,11 +1105,7 @@ end
 local function clientCheckDamage(p)
     for _, e in ipairs(Entities:FindAllInSphere(p:GetOrigin(), 2500)) do
         if isNpc(e) then
-            local rec = W.npcs[e]
-            if not rec then
-                rec = {}
-                W.npcs[e] = rec
-            end
+            local rec = npcRec(e)
             local hp = e:GetHealth()
             if rec.lastHp and hp < rec.lastHp and hp ~= rec.expectHp then
                 local o = e:GetOrigin()
@@ -1066,8 +1146,7 @@ end
 local function onNpcHealth(ref, hp)
     local e = npcByRef(ref)
     if not e then return end
-    local rec = W.npcs[e] or {}
-    W.npcs[e] = rec
+    local rec = npcRec(e)
     if hp < e:GetHealth() then
         rec.expectHp = hp
         rec.lastHp = hp
@@ -1078,21 +1157,71 @@ end
 local function onNpcPos(ref, pos, yaw)
     local e = npcByRef(ref, pos)
     if not e or STATIC_NPCS[e:GetClassname()] then return end
+    local rec = npcRec(e)
+    -- only while the host's copy is in a fight: before that both copies run the same scripts (a zombie
+    -- breaking through a wall, a scripted walk), and being moved would break them out of it
+    if not rec.target or rec.target == -1 then return end
     local d = (e:GetOrigin() - pos):Length()
     if d > NPC_TELEPORT then
         e:SetAbsOrigin(pos)
         if yaw then e:SetAngles(0, yaw, 0) end
+        rec.steerTo = nil
     elseif d > NPC_STEER then
-        pcall(function() e:NpcForceGoPosition(pos, true, 32) end)
+        -- walk it there (it keeps fighting on the way); don't nag it with the same goal every update
+        local now = Time()
+        if not rec.steerTo or (rec.steerTo - pos):Length() > 40 or now - (rec.steerAt or -100) > NPC_STEER_EVERY then
+            rec.steerTo, rec.steerAt = pos, now
+            pcall(function() e:NpcForceGoPosition(pos, true, 24) end)
+        end
     end
 end
 
-local function onNpcDamage(ref, dmg, near)
+local function relate(e, who, how)
+    DoEntFireByInstanceHandle(e, "SetRelationship", who .. " " .. how, 0, nil, nil)
+end
+
+-- the host's copy is after player `target` (-1: nobody): set ours on the same one
+local function onNpcEnemy(ref, target)
+    local e = npcByRef(ref)
+    if not e or not e:IsAlive() or not HOSTILE_SET[e:GetClassname()] then return end
+    local rec = npcRec(e)
+    local me = myId()
+    local pp = target ~= me and A.puppets and A.puppets[target]
+    local avatar = pp and pp.target and IsValidEntity(pp.target) and pp.target or nil
+    -- relationships hold the entities they were given, so set them again when that avatar was respawned
+    if rec.target == target and rec.targetEnt == avatar then return end
+    -- drop the one it was after, or it keeps shooting at it for a few seconds before switching
+    if rec.target and rec.target ~= target then
+        local old = rec.target == me and "!player" or (rec.targetEnt and IsValidEntity(rec.targetEnt) and rec.targetEnt:GetName())
+        if old then DoEntFireByInstanceHandle(e, "ForgetEntity", old, 0, nil, nil) end
+    end
+    rec.target, rec.targetEnt = target, avatar
+    -- every avatar by its own name: the SetRelationship input takes no wildcards
+    for id, other in pairs(A.puppets or {}) do
+        if other.target and IsValidEntity(other.target) then
+            local how = (target == -1 and "D_HT 0") or (id == target and "D_HT 99") or "D_NU 99"
+            relate(e, other.target:GetName(), how)
+        end
+    end
+    if target == -1 then
+        relate(e, "player", "D_HT 0")
+    elseif target == me then
+        relate(e, "player", "D_HT 99")
+        DoEntFireByInstanceHandle(e, "UpdateEnemyMemory", "!player", 0, nil, nil)
+    elseif avatar then
+        relate(e, "player", "D_NU 99")
+        DoEntFireByInstanceHandle(e, "UpdateEnemyMemory", avatar:GetName(), 0, nil, nil)
+    end
+end
+
+-- a client hurt this enemy in their game: the host's copy takes it, from that player's avatar
+local function onNpcDamage(from, ref, dmg, near)
     if not isHost() then return end
     local e = npcByRef(ref, near)
     if not e or not e:IsAlive() then return end
-    local p = Entities:GetLocalPlayer()
-    local info = CreateDamageInfo(p, p, Vector(0, 0, 0), e:GetCenter(), dmg, 2)
+    local pp = A.puppets and A.puppets[from]
+    local attacker = pp and pp.target and IsValidEntity(pp.target) and pp.target or Entities:GetLocalPlayer()
+    local info = CreateDamageInfo(attacker, attacker, Vector(0, 0, 0), e:GetCenter(), dmg, 2)
     e:TakeDamage(info)
     DestroyDamageInfo(info)
 end
@@ -1218,7 +1347,9 @@ function W.Receive(from, kind, a)
     elseif kind == "np" then
         if n(4) and not isHost() then onNpcPos(ref, Vector(n(2), n(3), n(4)), n(5)) end
     elseif kind == "nd" then
-        if n(2) then onNpcDamage(ref, n(2), n(5) and Vector(n(3), n(4), n(5)) or nil) end
+        if n(2) then onNpcDamage(from, ref, n(2), n(5) and Vector(n(3), n(4), n(5)) or nil) end
+    elseif kind == "ne" then
+        if n(2) and not isHost() then onNpcEnemy(ref, n(2)) end
     end
 end
 

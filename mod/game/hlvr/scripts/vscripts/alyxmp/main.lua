@@ -15,7 +15,7 @@
 
 AMP = AMP or {}
 local A = AMP
-A.VERSION = "0.5.1"
+A.VERSION = "0.5.2"
 A.PROTO = 3
 
 local MODEL_ALYX = "models/characters/alyx/alyx.vmdl"
@@ -67,7 +67,7 @@ local ATTACH_FOLLOW = PATTACH_POINT_FOLLOW or 5
 local IS_VR = not GlobalSys:CommandLineCheck("-novr")
 local PROP_NAME = "amp_pp"  -- every prop the mod spawns; saves restore them, so they get cleaned up on load
 local HUD_NAME = "amp_hud"
-local TARGET_NAME = "amp_target"  -- the invisible npc_bullseye each avatar carries, so enemies go after it
+local TARGET_NAME = "amp_target"  -- + "_<player id>": the invisible npc_bullseye each avatar carries, so enemies go after it
 local USE_RANGE = 75        -- NoVR's E reaches about this far (it caps player_use_radius at 60)
 local PULL_RANGE = 650      -- gravity-glove pulls
 
@@ -540,8 +540,11 @@ local function updateTarget(pp, pos, eyeh, p)
     if not (pp.target and IsValidEntity(pp.target)) then
         -- it has to be damageable, or no enemy counts it as one (so it gets a lot of health instead)
         pp.target = SpawnEntityFromTableSynchronous("npc_bullseye", {
-            targetname = TARGET_NAME, origin = vecStr(at), health = 999999, minangle = "360", spawnflags = 65536,
+            targetname = TARGET_NAME .. "_" .. pp.id, origin = vecStr(at), health = 999999, minangle = "360",
+            spawnflags = 65536,
         })
+        -- the host learns who each enemy is after from what it hits (world.lua)
+        if pp.target then pp.target:RedirectOutput("OnDamaged", "AMP_AvatarHit", pp.target) end
         return
     end
     pp.target:SetAbsOrigin(at)
@@ -1306,10 +1309,13 @@ end
 local function startNow()
     -- puppets that were in a save are just frozen props now; right after a restore their handles can't
     -- be called into yet, so remove them through the input queue
-    for _, name in ipairs({ PROP_NAME, HUD_NAME, TARGET_NAME }) do
+    for _, name in ipairs({ PROP_NAME, HUD_NAME }) do
         for _, e in ipairs(Entities:FindAllByName(name)) do
             DoEntFireByInstanceHandle(e, "Kill", "", 0, nil, nil)
         end
+    end
+    for _, e in ipairs(Entities:FindAllByClassname("npc_bullseye")) do
+        if (e:GetName() or ""):sub(1, #TARGET_NAME) == TARGET_NAME then DoEntFireByInstanceHandle(e, "Kill", "", 0, nil, nil) end
     end
     local core = Entities:FindByName(nil, "alyxmp_core")
     if not core then core = SpawnEntityFromTableSynchronous("info_target", { targetname = "alyxmp_core" }) end

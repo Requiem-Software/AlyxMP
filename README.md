@@ -31,8 +31,8 @@ needs to open TCP port 27420 on their router, or you can all use a VPN like Tail
 
 ## Good to know
 
-- Every player's game runs its own enemies, kept in step with the host's, so a fight can look a little
-  different for each of you.
+- Enemies are run by the host's game: everyone sees them in the same place, going after the same player,
+  with the same health, and they die for everyone at once.
 - Alyx MP adds a few small things to NoVR: a Half-Life 2 style HUD, auto reload and one line in its
   interaction script. Uninstalling removes them.
 - To uninstall, run `AlyxMP-Setup.exe` again and click **Uninstall**. Your saves stay where they are.
