@@ -272,7 +272,7 @@ local function drawRoster(p, dur)
     local count = 1
     for _ in pairs(A.puppets) do count = count + 1 end
     screenText(x, y, "PLAYERS  " .. count, px(15), true, DIM, 210, dur)
-    screenText(x + px(110), y, "Y  CHAT      F10  SETTINGS      /HELP", px(15), false, DIM, 150, dur)
+    screenText(x + px(110), y, "Y  CHAT      ESC  SETTINGS      /HELP", px(15), false, DIM, 150, dur)
     y = y + px(26)
     for _, pp in pairs(A.puppets) do
         screenText(x, y, displayName(pp.name), px(21), false, WHITE, 235, dur)
@@ -1018,7 +1018,7 @@ end
 local NOVR_FIRE_ALIAS = "+iv_attack;usemultitool"
 
 local function hookNoVRFire(now, p)
-    if IS_VR or not Viewmodels_UpgradeModel or now < (A.nextFireHook or 0) then return end
+    if IS_VR or not Viewmodels_UpgradeModel or now < (A.nextFireHook or 0) or (A.menu and A.menu.open) then return end
     A.nextFireHook = now + 3
     SendToConsole("alias +customattack \"" .. NOVR_FIRE_ALIAS .. ";amp_trigger\"")
     -- the right mouse button also turns what you're carrying (see below); NoVR rebinds its keys on every
@@ -1431,6 +1431,7 @@ end)
 -- the right mouse button (NoVR, see hookNoVRFire): turns what you carry (unless that's switched off in
 -- the settings menu); otherwise it does what it always did (aim down sights...)
 reg("+amp_turn", function()
+    if A.menu and A.menu.open then return end      -- (the menu is mouse-only; right-click does nothing there)
     local p = Entities:GetLocalPlayer()
     if not IS_VR and p and p:GetHealth() > 0 and shown("turn") then
         if not A.carry then
@@ -1549,6 +1550,193 @@ local function updateGlowHud(now, p)
 end
 
 ---------------------------------------------------------------------------------------------------
+-- The settings menu (NoVR): ESC over the game. The game keeps ESC to itself (binds never see it), so
+-- the launcher passes it on as amp_menu. The menu is drawn by the glow HUD - its AmpMenu* labels, moved
+-- and faded by its events (tools/menu_hud/make_menu.py writes both, and the layout numbers below come
+-- from there). It's used with the mouse alone: the mouse moves a cursor (mouse look is slowed a thousand
+-- times and the view put back, as when turning what you carry), pointing at a row lights up its name, a
+-- click switches it; ESC closes it. While it's open the launcher keeps the keyboard from the game, and the
+-- fire button clicks in the menu instead. Switches apply at once and go to the launcher, which keeps them
+-- and sends them back (amp_cfg) every time.
+-- Never let go of the game's trigger (-iv_attack) when it isn't held: that leaves it stuck down, and the
+-- gun fires by itself until the next real click (NoVR's multitool code steers round the same thing).
+
+local MENU = { "autoreload", "tags", "dot", "turn", "list", "feed", "zones" }   -- its rows, top down
+local MENU_L, MENU_R, MENU_ROW0, MENU_ROW_H = -166, 166, 136, 29    -- HUD units (640x480, x from the centre)
+local MENU_TOP, MENU_BOTTOM = 84, 348                                -- the menu's area (leaving it unlights the row)
+local CURSOR_SPEED = 15         -- cursor pixels per thousandth of a degree the view would have turned...
+local CURSOR_SENS = 50          -- ...at this mouse sensitivity (so it moves alike for everyone)
+local CURSOR_PITCH = 0.65       -- the view turns about half as fast again up/down; even it out
+local CURSOR_DOT = "k"          -- the cursor in AlyxMPMenuFx
+-- NoVR's fire button (novr.lua sets it on every level load, hookNoVRFire adds to it); the menu borrows it
+-- while it's open
+local NOVR_ALIASES = { { "+customattack", NOVR_FIRE_ALIAS .. ";amp_trigger" }, { "-customattack", "-iv_attack" } }
+local MENU_ALIASES = { { "+customattack", "amp_menu_click" }, { "-customattack", "amp_menu_unclick" } }
+
+local function hudAnim(name) SendToConsole("testhudanim " .. name) end
+
+local function setAliases(list)
+    for _, a in ipairs(list) do SendToConsole("alias " .. a[1] .. " \"" .. a[2] .. "\"") end
+end
+
+-- the game's own menu sounds (Half-Life: Alyx's main menu uses them), right at the player's ears
+local function menuSound(name)
+    local p = Entities:GetLocalPlayer()
+    if p then StartSoundEventFromPosition(name, p:EyePosition()) end
+end
+
+local function menuOn(i) return A.cfg[MENU[i]] ~= "0" end
+
+-- HUD units -> screen pixels (the HUD scales with the window's height, x measured from the centre)
+local function hudScale()
+    local w, h = screenSize()
+    return h / 480, w / 2
+end
+
+-- the row under screen point (x, y), or nil
+local function rowAt(x, y)
+    local s, cx = hudScale()
+    local u, v = (x - cx) / s, y / s
+    if u < MENU_L or u > MENU_R then return nil end
+    local i = math.floor((v - MENU_ROW0) / MENU_ROW_H) + 1
+    if i >= 1 and i <= #MENU then return i end
+    return nil
+end
+
+local function insideMenu(x, y)
+    local s, cx = hudScale()
+    local u, v = (x - cx) / s, y / s
+    return u >= MENU_L - 20 and u <= MENU_R + 20 and v >= MENU_TOP and v <= MENU_BOTTOM
+end
+
+local function menuHover(i, sound)
+    local m = A.menu
+    if i == m.hover then return end
+    m.hover = i
+    hudAnim(i and ("AmpMenuHover" .. i) or "AmpMenuHoverNone")
+    if i and sound then menuSound("PanoUI.Rollover") end
+end
+
+function A.MenuOpen()
+    local m = A.menu
+    local p = Entities:GetLocalPlayer()
+    if IS_VR or m.open or not p or p:GetHealth() <= 0 then return end
+    if A.carry then dropCarry(true) end     -- (E switches things in the menu)
+    m.open, m.hover, m.pressed = true, nil, false
+    setAliases(MENU_ALIASES)
+    -- the mouse drives the cursor; the view stays where it is
+    local sens = Convars:GetFloat("mouse_pitchyaw_sensitivity") or rawget(_G, "MOUSE_SENSITIVITY") or 50
+    local view = p:EyeAngles()
+    m.cap = { sens = sens, view = QAngle(view.x, view.y, 0), last = view, tag = view.z }
+    SendToConsole("mouse_pitchyaw_sensitivity " .. sens / TURN_SENS_DIV)
+    local w, h = screenSize()
+    m.cx, m.cy = w / 2, h / 2
+    -- the game's reticle (the brackets round the middle of the screen) would sit in the menu
+    m.reticle = Convars:GetInt("hud_draw_fixed_reticle")
+    if m.reticle and m.reticle ~= 0 then SendToConsole("hud_draw_fixed_reticle 0") end
+    hudAnim("AmpMenuOpen")
+    m.showAt = Time() + 0.1     -- the switches come in as the rows do
+    menuSound("PanoUI.Appear")
+    A.Emit("menu", 1)           -- (the launcher keeps the keyboard from the game meanwhile)
+end
+
+function A.MenuClose(quiet)
+    local m = A.menu
+    if not m.open then return end
+    m.open, m.showAt, m.hover = false, nil, nil
+    hudAnim("AmpMenuClose")
+    setAliases(NOVR_ALIASES)
+    -- the mouse button is still down from a click in the menu: its release mustn't let go of the trigger
+    if m.pressed then SendToConsole("alias -customattack \"alias -customattack -iv_attack\"") end
+    m.pressed = false
+    local c = m.cap
+    m.cap = nil
+    if c then
+        SendToConsole("mouse_pitchyaw_sensitivity " .. c.sens)
+        SendToConsole(string.format("setang_exact %.6f %.6f 0", c.view.x, c.view.y))
+    end
+    if m.reticle and m.reticle ~= 0 then SendToConsole("hud_draw_fixed_reticle " .. m.reticle) end
+    if not quiet then menuSound("PanoUI.Disappear") end
+    A.Emit("menu", 0)
+end
+
+local function menuSwitch(i)
+    local m = A.menu
+    if not m.open or m.showAt or not i then return end
+    local key = MENU[i]
+    local on = not menuOn(i)
+    A.cfg[key] = on and "1" or "0"
+    hudAnim((on and "AmpMenuOn" or "AmpMenuOff") .. i)
+    menuSound("PanoUI.ToggleOption")
+    A.Emit("cfg", key, A.cfg[key])
+end
+
+local function menuClick()
+    local m = A.menu
+    if not m.open then return end
+    local i = rowAt(m.cx, m.cy)
+    if i then
+        menuHover(i, false)
+        menuSwitch(i)
+    end
+end
+
+local function updateMenu(now, p)
+    local m = A.menu
+    if not m.open then return end
+    if p:GetHealth() <= 0 then
+        A.MenuClose(true)
+        return
+    end
+    if m.showAt and now >= m.showAt then
+        m.showAt = nil
+        for i = 1, #MENU do hudAnim((menuOn(i) and "AmpMenuShowOn" or "AmpMenuShowOff") .. i) end
+        menuHover(rowAt(m.cx, m.cy), false)     -- the row under the cursor from the start
+    end
+    -- the cursor
+    local c = m.cap
+    if c then
+        local dyaw, dpitch = updateTurning(c, p:EyeAngles(), now)
+        local k = TURN_SENS_DIV * CURSOR_SPEED * CURSOR_SENS / math.max(c.sens, 1)
+        local w, h = screenSize()
+        local x = math.max(0, math.min(w - 1, m.cx - dyaw * k))
+        local y = math.max(0, math.min(h - 1, m.cy + dpitch * k * CURSOR_PITCH))
+        if x ~= m.cx or y ~= m.cy then
+            m.cx, m.cy = x, y
+            local i = rowAt(x, y)
+            if i then menuHover(i, true) elseif m.hover and not insideMenu(x, y) then menuHover(nil) end
+        end
+        local size = px(34)
+        local tx, ty = math.floor(m.cx - size / 2 + 0.5), math.floor(m.cy - size / 2 + 0.5)
+        DebugScreenTextPretty(tx, ty, 0, CURSOR_DOT, 255, 236, 170, 255, 0, "AlyxMPMenuFx", size, false)
+    end
+end
+
+reg("amp_menu", function() if A.menu.open then A.MenuClose() else A.MenuOpen() end end)
+reg("amp_menu_click", function()
+    A.menu.pressed = true
+    menuClick()
+end)
+-- the fire button let go while the menu is open: after a click in the menu, nothing; otherwise it was
+-- already down (firing) when the menu opened, and the trigger is let go of here (unless NoVR's multitool
+-- already did)
+reg("amp_menu_unclick", function()
+    local m = A.menu
+    if m.pressed then
+        m.pressed = false
+        return
+    end
+    local vm = Entities:FindByClassname(nil, "viewmodel")
+    if vm and (vm:GetModelName() or ""):find("v_multitool") then return end
+    SendToConsole("-iv_attack")
+end)
+
+-- this file is run again on every level (and when the launcher attaches): a menu that was open is gone
+-- with the old level, and the mouse is given back
+A.menu = A.menu or {}
+if A.menu.open then A.MenuClose(true) end
+
+---------------------------------------------------------------------------------------------------
 -- main loop
 
 local lastTick = Time()
@@ -1559,6 +1747,7 @@ local function tick()
     local p = Entities:GetLocalPlayer()
     if p then
         updateGlowHud(now, p)
+        updateMenu(now, p)
         hookNoVRFire(now, p)
         updateCarry(p, now)
         watchViewModelShots(now)

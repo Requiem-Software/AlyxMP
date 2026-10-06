@@ -923,3 +923,651 @@ event AmpAmmoOff
 	Animate AmpHudAmmoGlow2 ypos "600" Linear 0.0 0.0
 	Animate AmpHudBulletGlow ypos "600" Linear 0.0 0.0
 }
+// ---- Alyx MP settings menu (tools/menu_hud/make_menu.py) ----
+event AmpMenuOpen
+{
+	StopEvent AmpMenuClose 0.0
+	Animate AmpMenuDim BgColor "6 5 3 172" Deaccel 0.000 0.300
+	Animate AmpMenuTitle ypos "82" Linear 0.000 0.000
+	Animate AmpMenuTitle ypos "89" Deaccel 0.030 0.420
+	Animate AmpMenuTitle FgColor "243 186 10 255" Deaccel 0.030 0.340
+	Animate AmpMenuRule1 FgColor "243 186 10 33" Deaccel 0.100 0.450
+	Animate AmpMenuRule2 FgColor "243 186 10 33" Deaccel 0.300 0.450
+	Animate AmpMenuLabel1 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLabel1 xpos "c-163" Deaccel 0.080 0.380
+	Animate AmpMenuLit1 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLit1 xpos "c-163" Deaccel 0.080 0.380
+	Animate AmpMenuDesc1 xpos "c-170" Linear 0.000 0.000
+	Animate AmpMenuDesc1 xpos "c-162" Deaccel 0.080 0.380
+	Animate AmpMenuLabel1 FgColor "238 230 212 255" Deaccel 0.080 0.300
+	Animate AmpMenuDesc1 FgColor "176 156 124 179" Deaccel 0.130 0.350
+	Animate AmpMenuRestart1 FgColor "190 140 60 135" Deaccel 0.200 0.350
+	Animate AmpMenuLabel2 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLabel2 xpos "c-163" Deaccel 0.112 0.380
+	Animate AmpMenuLit2 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLit2 xpos "c-163" Deaccel 0.112 0.380
+	Animate AmpMenuDesc2 xpos "c-170" Linear 0.000 0.000
+	Animate AmpMenuDesc2 xpos "c-162" Deaccel 0.112 0.380
+	Animate AmpMenuLabel2 FgColor "238 230 212 255" Deaccel 0.112 0.300
+	Animate AmpMenuDesc2 FgColor "176 156 124 179" Deaccel 0.162 0.350
+	Animate AmpMenuLabel3 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLabel3 xpos "c-163" Deaccel 0.144 0.380
+	Animate AmpMenuLit3 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLit3 xpos "c-163" Deaccel 0.144 0.380
+	Animate AmpMenuDesc3 xpos "c-170" Linear 0.000 0.000
+	Animate AmpMenuDesc3 xpos "c-162" Deaccel 0.144 0.380
+	Animate AmpMenuLabel3 FgColor "238 230 212 255" Deaccel 0.144 0.300
+	Animate AmpMenuDesc3 FgColor "176 156 124 179" Deaccel 0.194 0.350
+	Animate AmpMenuLabel4 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLabel4 xpos "c-163" Deaccel 0.176 0.380
+	Animate AmpMenuLit4 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLit4 xpos "c-163" Deaccel 0.176 0.380
+	Animate AmpMenuDesc4 xpos "c-170" Linear 0.000 0.000
+	Animate AmpMenuDesc4 xpos "c-162" Deaccel 0.176 0.380
+	Animate AmpMenuLabel4 FgColor "238 230 212 255" Deaccel 0.176 0.300
+	Animate AmpMenuDesc4 FgColor "176 156 124 179" Deaccel 0.226 0.350
+	Animate AmpMenuLabel5 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLabel5 xpos "c-163" Deaccel 0.208 0.380
+	Animate AmpMenuLit5 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLit5 xpos "c-163" Deaccel 0.208 0.380
+	Animate AmpMenuDesc5 xpos "c-170" Linear 0.000 0.000
+	Animate AmpMenuDesc5 xpos "c-162" Deaccel 0.208 0.380
+	Animate AmpMenuLabel5 FgColor "238 230 212 255" Deaccel 0.208 0.300
+	Animate AmpMenuDesc5 FgColor "176 156 124 179" Deaccel 0.258 0.350
+	Animate AmpMenuLabel6 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLabel6 xpos "c-163" Deaccel 0.240 0.380
+	Animate AmpMenuLit6 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLit6 xpos "c-163" Deaccel 0.240 0.380
+	Animate AmpMenuDesc6 xpos "c-170" Linear 0.000 0.000
+	Animate AmpMenuDesc6 xpos "c-162" Deaccel 0.240 0.380
+	Animate AmpMenuLabel6 FgColor "238 230 212 255" Deaccel 0.240 0.300
+	Animate AmpMenuDesc6 FgColor "176 156 124 179" Deaccel 0.290 0.350
+	Animate AmpMenuLabel7 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLabel7 xpos "c-163" Deaccel 0.272 0.380
+	Animate AmpMenuLit7 xpos "c-171" Linear 0.000 0.000
+	Animate AmpMenuLit7 xpos "c-163" Deaccel 0.272 0.380
+	Animate AmpMenuDesc7 xpos "c-170" Linear 0.000 0.000
+	Animate AmpMenuDesc7 xpos "c-162" Deaccel 0.272 0.380
+	Animate AmpMenuLabel7 FgColor "238 230 212 255" Deaccel 0.272 0.300
+	Animate AmpMenuDesc7 FgColor "176 156 124 179" Deaccel 0.322 0.350
+	Animate AmpMenuChips FgColor "243 186 10 220" Deaccel 0.340 0.400
+	Animate AmpMenuHints FgColor "176 156 124 191" Deaccel 0.380 0.400
+}
+event AmpMenuClose
+{
+	StopEvent AmpMenuOpen 0.0
+	StopEvent AmpMenuHoverNone 0.0
+	StopEvent AmpMenuHover1 0.0
+	StopEvent AmpMenuOn1 0.0
+	StopEvent AmpMenuOff1 0.0
+	StopEvent AmpMenuShowOn1 0.0
+	StopEvent AmpMenuShowOff1 0.0
+	StopEvent AmpMenuHover2 0.0
+	StopEvent AmpMenuOn2 0.0
+	StopEvent AmpMenuOff2 0.0
+	StopEvent AmpMenuShowOn2 0.0
+	StopEvent AmpMenuShowOff2 0.0
+	StopEvent AmpMenuHover3 0.0
+	StopEvent AmpMenuOn3 0.0
+	StopEvent AmpMenuOff3 0.0
+	StopEvent AmpMenuShowOn3 0.0
+	StopEvent AmpMenuShowOff3 0.0
+	StopEvent AmpMenuHover4 0.0
+	StopEvent AmpMenuOn4 0.0
+	StopEvent AmpMenuOff4 0.0
+	StopEvent AmpMenuShowOn4 0.0
+	StopEvent AmpMenuShowOff4 0.0
+	StopEvent AmpMenuHover5 0.0
+	StopEvent AmpMenuOn5 0.0
+	StopEvent AmpMenuOff5 0.0
+	StopEvent AmpMenuShowOn5 0.0
+	StopEvent AmpMenuShowOff5 0.0
+	StopEvent AmpMenuHover6 0.0
+	StopEvent AmpMenuOn6 0.0
+	StopEvent AmpMenuOff6 0.0
+	StopEvent AmpMenuShowOn6 0.0
+	StopEvent AmpMenuShowOff6 0.0
+	StopEvent AmpMenuHover7 0.0
+	StopEvent AmpMenuOn7 0.0
+	StopEvent AmpMenuOff7 0.0
+	StopEvent AmpMenuShowOn7 0.0
+	StopEvent AmpMenuShowOff7 0.0
+	Animate AmpMenuDim BgColor "6 5 3 0" Accel 0.030 0.240
+	Animate AmpMenuTitle FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuRule1 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuRule2 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuChips FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuHints FgColor "176 156 124 0" Accel 0.000 0.160
+	Animate AmpMenuLabel1 FgColor "238 230 212 0" Accel 0.000 0.160
+	Animate AmpMenuLit1 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuDesc1 FgColor "176 156 124 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff1 FgColor "190 140 60 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOn1 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuKnob1 FgColor "205 192 168 0" Accel 0.000 0.160
+	Animate AmpMenuRestart1 FgColor "190 140 60 0" Accel 0.000 0.160
+	Animate AmpMenuLabel2 FgColor "238 230 212 0" Accel 0.000 0.160
+	Animate AmpMenuLit2 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuDesc2 FgColor "176 156 124 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff2 FgColor "190 140 60 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOn2 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuKnob2 FgColor "205 192 168 0" Accel 0.000 0.160
+	Animate AmpMenuLabel3 FgColor "238 230 212 0" Accel 0.000 0.160
+	Animate AmpMenuLit3 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuDesc3 FgColor "176 156 124 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff3 FgColor "190 140 60 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOn3 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuKnob3 FgColor "205 192 168 0" Accel 0.000 0.160
+	Animate AmpMenuLabel4 FgColor "238 230 212 0" Accel 0.000 0.160
+	Animate AmpMenuLit4 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuDesc4 FgColor "176 156 124 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff4 FgColor "190 140 60 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOn4 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuKnob4 FgColor "205 192 168 0" Accel 0.000 0.160
+	Animate AmpMenuLabel5 FgColor "238 230 212 0" Accel 0.000 0.160
+	Animate AmpMenuLit5 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuDesc5 FgColor "176 156 124 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff5 FgColor "190 140 60 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOn5 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuKnob5 FgColor "205 192 168 0" Accel 0.000 0.160
+	Animate AmpMenuLabel6 FgColor "238 230 212 0" Accel 0.000 0.160
+	Animate AmpMenuLit6 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuDesc6 FgColor "176 156 124 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff6 FgColor "190 140 60 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOn6 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuKnob6 FgColor "205 192 168 0" Accel 0.000 0.160
+	Animate AmpMenuLabel7 FgColor "238 230 212 0" Accel 0.000 0.160
+	Animate AmpMenuLit7 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuDesc7 FgColor "176 156 124 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff7 FgColor "190 140 60 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOn7 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuKnob7 FgColor "205 192 168 0" Accel 0.000 0.160
+	Animate AmpMenuTitle ypos "85" Accel 0.000 0.180
+}
+event AmpMenuHover1
+{
+	StopEvent AmpMenuHover2 0.0
+	StopEvent AmpMenuHover3 0.0
+	StopEvent AmpMenuHover4 0.0
+	StopEvent AmpMenuHover5 0.0
+	StopEvent AmpMenuHover6 0.0
+	StopEvent AmpMenuHover7 0.0
+	StopEvent AmpMenuHoverNone 0.0
+	Animate AmpMenuLit1 FgColor "243 186 10 255" Deaccel 0.000 0.140
+	Animate AmpMenuLabel1 FgColor "238 230 212 0" Deaccel 0.000 0.140
+	Animate AmpMenuLit2 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel2 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit3 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel3 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit4 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel4 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit5 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel5 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit6 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel6 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit7 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel7 FgColor "238 230 212 255" Deaccel 0.000 0.200
+}
+event AmpMenuHover2
+{
+	StopEvent AmpMenuHover1 0.0
+	StopEvent AmpMenuHover3 0.0
+	StopEvent AmpMenuHover4 0.0
+	StopEvent AmpMenuHover5 0.0
+	StopEvent AmpMenuHover6 0.0
+	StopEvent AmpMenuHover7 0.0
+	StopEvent AmpMenuHoverNone 0.0
+	Animate AmpMenuLit1 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel1 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit2 FgColor "243 186 10 255" Deaccel 0.000 0.140
+	Animate AmpMenuLabel2 FgColor "238 230 212 0" Deaccel 0.000 0.140
+	Animate AmpMenuLit3 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel3 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit4 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel4 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit5 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel5 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit6 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel6 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit7 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel7 FgColor "238 230 212 255" Deaccel 0.000 0.200
+}
+event AmpMenuHover3
+{
+	StopEvent AmpMenuHover1 0.0
+	StopEvent AmpMenuHover2 0.0
+	StopEvent AmpMenuHover4 0.0
+	StopEvent AmpMenuHover5 0.0
+	StopEvent AmpMenuHover6 0.0
+	StopEvent AmpMenuHover7 0.0
+	StopEvent AmpMenuHoverNone 0.0
+	Animate AmpMenuLit1 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel1 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit2 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel2 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit3 FgColor "243 186 10 255" Deaccel 0.000 0.140
+	Animate AmpMenuLabel3 FgColor "238 230 212 0" Deaccel 0.000 0.140
+	Animate AmpMenuLit4 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel4 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit5 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel5 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit6 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel6 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit7 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel7 FgColor "238 230 212 255" Deaccel 0.000 0.200
+}
+event AmpMenuHover4
+{
+	StopEvent AmpMenuHover1 0.0
+	StopEvent AmpMenuHover2 0.0
+	StopEvent AmpMenuHover3 0.0
+	StopEvent AmpMenuHover5 0.0
+	StopEvent AmpMenuHover6 0.0
+	StopEvent AmpMenuHover7 0.0
+	StopEvent AmpMenuHoverNone 0.0
+	Animate AmpMenuLit1 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel1 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit2 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel2 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit3 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel3 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit4 FgColor "243 186 10 255" Deaccel 0.000 0.140
+	Animate AmpMenuLabel4 FgColor "238 230 212 0" Deaccel 0.000 0.140
+	Animate AmpMenuLit5 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel5 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit6 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel6 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit7 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel7 FgColor "238 230 212 255" Deaccel 0.000 0.200
+}
+event AmpMenuHover5
+{
+	StopEvent AmpMenuHover1 0.0
+	StopEvent AmpMenuHover2 0.0
+	StopEvent AmpMenuHover3 0.0
+	StopEvent AmpMenuHover4 0.0
+	StopEvent AmpMenuHover6 0.0
+	StopEvent AmpMenuHover7 0.0
+	StopEvent AmpMenuHoverNone 0.0
+	Animate AmpMenuLit1 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel1 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit2 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel2 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit3 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel3 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit4 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel4 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit5 FgColor "243 186 10 255" Deaccel 0.000 0.140
+	Animate AmpMenuLabel5 FgColor "238 230 212 0" Deaccel 0.000 0.140
+	Animate AmpMenuLit6 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel6 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit7 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel7 FgColor "238 230 212 255" Deaccel 0.000 0.200
+}
+event AmpMenuHover6
+{
+	StopEvent AmpMenuHover1 0.0
+	StopEvent AmpMenuHover2 0.0
+	StopEvent AmpMenuHover3 0.0
+	StopEvent AmpMenuHover4 0.0
+	StopEvent AmpMenuHover5 0.0
+	StopEvent AmpMenuHover7 0.0
+	StopEvent AmpMenuHoverNone 0.0
+	Animate AmpMenuLit1 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel1 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit2 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel2 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit3 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel3 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit4 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel4 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit5 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel5 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit6 FgColor "243 186 10 255" Deaccel 0.000 0.140
+	Animate AmpMenuLabel6 FgColor "238 230 212 0" Deaccel 0.000 0.140
+	Animate AmpMenuLit7 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel7 FgColor "238 230 212 255" Deaccel 0.000 0.200
+}
+event AmpMenuHover7
+{
+	StopEvent AmpMenuHover1 0.0
+	StopEvent AmpMenuHover2 0.0
+	StopEvent AmpMenuHover3 0.0
+	StopEvent AmpMenuHover4 0.0
+	StopEvent AmpMenuHover5 0.0
+	StopEvent AmpMenuHover6 0.0
+	StopEvent AmpMenuHoverNone 0.0
+	Animate AmpMenuLit1 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel1 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit2 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel2 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit3 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel3 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit4 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel4 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit5 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel5 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit6 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel6 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit7 FgColor "243 186 10 255" Deaccel 0.000 0.140
+	Animate AmpMenuLabel7 FgColor "238 230 212 0" Deaccel 0.000 0.140
+}
+event AmpMenuHoverNone
+{
+	StopEvent AmpMenuHover1 0.0
+	StopEvent AmpMenuHover2 0.0
+	StopEvent AmpMenuHover3 0.0
+	StopEvent AmpMenuHover4 0.0
+	StopEvent AmpMenuHover5 0.0
+	StopEvent AmpMenuHover6 0.0
+	StopEvent AmpMenuHover7 0.0
+	StopEvent AmpMenuHoverNone 0.0
+	Animate AmpMenuLit1 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel1 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit2 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel2 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit3 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel3 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit4 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel4 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit5 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel5 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit6 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel6 FgColor "238 230 212 255" Deaccel 0.000 0.200
+	Animate AmpMenuLit7 FgColor "243 186 10 0" Deaccel 0.000 0.200
+	Animate AmpMenuLabel7 FgColor "238 230 212 255" Deaccel 0.000 0.200
+}
+event AmpMenuOn1
+{
+	StopEvent AmpMenuOff1 0.0
+	StopEvent AmpMenuShowOn1 0.0
+	StopEvent AmpMenuShowOff1 0.0
+	Animate AmpMenuKnob1 xpos "c+150" Deaccel 0.000 0.200
+	Animate AmpMenuKnob1 FgColor "34 24 4 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn1 FgColor "243 186 10 255" Deaccel 0.000 0.160
+	Animate AmpMenuTrackOff1 FgColor "190 140 60 0" Linear 0.000 0.120
+}
+event AmpMenuOff1
+{
+	StopEvent AmpMenuOn1 0.0
+	StopEvent AmpMenuShowOn1 0.0
+	StopEvent AmpMenuShowOff1 0.0
+	Animate AmpMenuKnob1 xpos "c+138" Deaccel 0.000 0.200
+	Animate AmpMenuKnob1 FgColor "205 192 168 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn1 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff1 FgColor "190 140 60 61" Deaccel 0.040 0.200
+}
+event AmpMenuShowOn1
+{
+	StopEvent AmpMenuOn1 0.0
+	StopEvent AmpMenuOff1 0.0
+	StopEvent AmpMenuShowOff1 0.0
+	Animate AmpMenuKnob1 xpos "c+150" Linear 0.000 0.000
+	Animate AmpMenuKnob1 FgColor "34 24 4 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOff1 FgColor "190 140 60 0" Linear 0.000 0.000
+	Animate AmpMenuKnob1 FgColor "34 24 4 255" Deaccel 0.100 0.300
+	Animate AmpMenuTrackOn1 FgColor "243 186 10 255" Deaccel 0.100 0.300
+}
+event AmpMenuShowOff1
+{
+	StopEvent AmpMenuOn1 0.0
+	StopEvent AmpMenuOff1 0.0
+	StopEvent AmpMenuShowOn1 0.0
+	Animate AmpMenuKnob1 xpos "c+138" Linear 0.000 0.000
+	Animate AmpMenuKnob1 FgColor "205 192 168 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOn1 FgColor "243 186 10 0" Linear 0.000 0.000
+	Animate AmpMenuKnob1 FgColor "205 192 168 255" Deaccel 0.100 0.300
+	Animate AmpMenuTrackOff1 FgColor "190 140 60 61" Deaccel 0.100 0.300
+}
+event AmpMenuOn2
+{
+	StopEvent AmpMenuOff2 0.0
+	StopEvent AmpMenuShowOn2 0.0
+	StopEvent AmpMenuShowOff2 0.0
+	Animate AmpMenuKnob2 xpos "c+150" Deaccel 0.000 0.200
+	Animate AmpMenuKnob2 FgColor "34 24 4 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn2 FgColor "243 186 10 255" Deaccel 0.000 0.160
+	Animate AmpMenuTrackOff2 FgColor "190 140 60 0" Linear 0.000 0.120
+}
+event AmpMenuOff2
+{
+	StopEvent AmpMenuOn2 0.0
+	StopEvent AmpMenuShowOn2 0.0
+	StopEvent AmpMenuShowOff2 0.0
+	Animate AmpMenuKnob2 xpos "c+138" Deaccel 0.000 0.200
+	Animate AmpMenuKnob2 FgColor "205 192 168 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn2 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff2 FgColor "190 140 60 61" Deaccel 0.040 0.200
+}
+event AmpMenuShowOn2
+{
+	StopEvent AmpMenuOn2 0.0
+	StopEvent AmpMenuOff2 0.0
+	StopEvent AmpMenuShowOff2 0.0
+	Animate AmpMenuKnob2 xpos "c+150" Linear 0.000 0.000
+	Animate AmpMenuKnob2 FgColor "34 24 4 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOff2 FgColor "190 140 60 0" Linear 0.000 0.000
+	Animate AmpMenuKnob2 FgColor "34 24 4 255" Deaccel 0.132 0.300
+	Animate AmpMenuTrackOn2 FgColor "243 186 10 255" Deaccel 0.132 0.300
+}
+event AmpMenuShowOff2
+{
+	StopEvent AmpMenuOn2 0.0
+	StopEvent AmpMenuOff2 0.0
+	StopEvent AmpMenuShowOn2 0.0
+	Animate AmpMenuKnob2 xpos "c+138" Linear 0.000 0.000
+	Animate AmpMenuKnob2 FgColor "205 192 168 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOn2 FgColor "243 186 10 0" Linear 0.000 0.000
+	Animate AmpMenuKnob2 FgColor "205 192 168 255" Deaccel 0.132 0.300
+	Animate AmpMenuTrackOff2 FgColor "190 140 60 61" Deaccel 0.132 0.300
+}
+event AmpMenuOn3
+{
+	StopEvent AmpMenuOff3 0.0
+	StopEvent AmpMenuShowOn3 0.0
+	StopEvent AmpMenuShowOff3 0.0
+	Animate AmpMenuKnob3 xpos "c+150" Deaccel 0.000 0.200
+	Animate AmpMenuKnob3 FgColor "34 24 4 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn3 FgColor "243 186 10 255" Deaccel 0.000 0.160
+	Animate AmpMenuTrackOff3 FgColor "190 140 60 0" Linear 0.000 0.120
+}
+event AmpMenuOff3
+{
+	StopEvent AmpMenuOn3 0.0
+	StopEvent AmpMenuShowOn3 0.0
+	StopEvent AmpMenuShowOff3 0.0
+	Animate AmpMenuKnob3 xpos "c+138" Deaccel 0.000 0.200
+	Animate AmpMenuKnob3 FgColor "205 192 168 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn3 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff3 FgColor "190 140 60 61" Deaccel 0.040 0.200
+}
+event AmpMenuShowOn3
+{
+	StopEvent AmpMenuOn3 0.0
+	StopEvent AmpMenuOff3 0.0
+	StopEvent AmpMenuShowOff3 0.0
+	Animate AmpMenuKnob3 xpos "c+150" Linear 0.000 0.000
+	Animate AmpMenuKnob3 FgColor "34 24 4 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOff3 FgColor "190 140 60 0" Linear 0.000 0.000
+	Animate AmpMenuKnob3 FgColor "34 24 4 255" Deaccel 0.164 0.300
+	Animate AmpMenuTrackOn3 FgColor "243 186 10 255" Deaccel 0.164 0.300
+}
+event AmpMenuShowOff3
+{
+	StopEvent AmpMenuOn3 0.0
+	StopEvent AmpMenuOff3 0.0
+	StopEvent AmpMenuShowOn3 0.0
+	Animate AmpMenuKnob3 xpos "c+138" Linear 0.000 0.000
+	Animate AmpMenuKnob3 FgColor "205 192 168 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOn3 FgColor "243 186 10 0" Linear 0.000 0.000
+	Animate AmpMenuKnob3 FgColor "205 192 168 255" Deaccel 0.164 0.300
+	Animate AmpMenuTrackOff3 FgColor "190 140 60 61" Deaccel 0.164 0.300
+}
+event AmpMenuOn4
+{
+	StopEvent AmpMenuOff4 0.0
+	StopEvent AmpMenuShowOn4 0.0
+	StopEvent AmpMenuShowOff4 0.0
+	Animate AmpMenuKnob4 xpos "c+150" Deaccel 0.000 0.200
+	Animate AmpMenuKnob4 FgColor "34 24 4 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn4 FgColor "243 186 10 255" Deaccel 0.000 0.160
+	Animate AmpMenuTrackOff4 FgColor "190 140 60 0" Linear 0.000 0.120
+}
+event AmpMenuOff4
+{
+	StopEvent AmpMenuOn4 0.0
+	StopEvent AmpMenuShowOn4 0.0
+	StopEvent AmpMenuShowOff4 0.0
+	Animate AmpMenuKnob4 xpos "c+138" Deaccel 0.000 0.200
+	Animate AmpMenuKnob4 FgColor "205 192 168 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn4 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff4 FgColor "190 140 60 61" Deaccel 0.040 0.200
+}
+event AmpMenuShowOn4
+{
+	StopEvent AmpMenuOn4 0.0
+	StopEvent AmpMenuOff4 0.0
+	StopEvent AmpMenuShowOff4 0.0
+	Animate AmpMenuKnob4 xpos "c+150" Linear 0.000 0.000
+	Animate AmpMenuKnob4 FgColor "34 24 4 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOff4 FgColor "190 140 60 0" Linear 0.000 0.000
+	Animate AmpMenuKnob4 FgColor "34 24 4 255" Deaccel 0.196 0.300
+	Animate AmpMenuTrackOn4 FgColor "243 186 10 255" Deaccel 0.196 0.300
+}
+event AmpMenuShowOff4
+{
+	StopEvent AmpMenuOn4 0.0
+	StopEvent AmpMenuOff4 0.0
+	StopEvent AmpMenuShowOn4 0.0
+	Animate AmpMenuKnob4 xpos "c+138" Linear 0.000 0.000
+	Animate AmpMenuKnob4 FgColor "205 192 168 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOn4 FgColor "243 186 10 0" Linear 0.000 0.000
+	Animate AmpMenuKnob4 FgColor "205 192 168 255" Deaccel 0.196 0.300
+	Animate AmpMenuTrackOff4 FgColor "190 140 60 61" Deaccel 0.196 0.300
+}
+event AmpMenuOn5
+{
+	StopEvent AmpMenuOff5 0.0
+	StopEvent AmpMenuShowOn5 0.0
+	StopEvent AmpMenuShowOff5 0.0
+	Animate AmpMenuKnob5 xpos "c+150" Deaccel 0.000 0.200
+	Animate AmpMenuKnob5 FgColor "34 24 4 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn5 FgColor "243 186 10 255" Deaccel 0.000 0.160
+	Animate AmpMenuTrackOff5 FgColor "190 140 60 0" Linear 0.000 0.120
+}
+event AmpMenuOff5
+{
+	StopEvent AmpMenuOn5 0.0
+	StopEvent AmpMenuShowOn5 0.0
+	StopEvent AmpMenuShowOff5 0.0
+	Animate AmpMenuKnob5 xpos "c+138" Deaccel 0.000 0.200
+	Animate AmpMenuKnob5 FgColor "205 192 168 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn5 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff5 FgColor "190 140 60 61" Deaccel 0.040 0.200
+}
+event AmpMenuShowOn5
+{
+	StopEvent AmpMenuOn5 0.0
+	StopEvent AmpMenuOff5 0.0
+	StopEvent AmpMenuShowOff5 0.0
+	Animate AmpMenuKnob5 xpos "c+150" Linear 0.000 0.000
+	Animate AmpMenuKnob5 FgColor "34 24 4 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOff5 FgColor "190 140 60 0" Linear 0.000 0.000
+	Animate AmpMenuKnob5 FgColor "34 24 4 255" Deaccel 0.228 0.300
+	Animate AmpMenuTrackOn5 FgColor "243 186 10 255" Deaccel 0.228 0.300
+}
+event AmpMenuShowOff5
+{
+	StopEvent AmpMenuOn5 0.0
+	StopEvent AmpMenuOff5 0.0
+	StopEvent AmpMenuShowOn5 0.0
+	Animate AmpMenuKnob5 xpos "c+138" Linear 0.000 0.000
+	Animate AmpMenuKnob5 FgColor "205 192 168 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOn5 FgColor "243 186 10 0" Linear 0.000 0.000
+	Animate AmpMenuKnob5 FgColor "205 192 168 255" Deaccel 0.228 0.300
+	Animate AmpMenuTrackOff5 FgColor "190 140 60 61" Deaccel 0.228 0.300
+}
+event AmpMenuOn6
+{
+	StopEvent AmpMenuOff6 0.0
+	StopEvent AmpMenuShowOn6 0.0
+	StopEvent AmpMenuShowOff6 0.0
+	Animate AmpMenuKnob6 xpos "c+150" Deaccel 0.000 0.200
+	Animate AmpMenuKnob6 FgColor "34 24 4 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn6 FgColor "243 186 10 255" Deaccel 0.000 0.160
+	Animate AmpMenuTrackOff6 FgColor "190 140 60 0" Linear 0.000 0.120
+}
+event AmpMenuOff6
+{
+	StopEvent AmpMenuOn6 0.0
+	StopEvent AmpMenuShowOn6 0.0
+	StopEvent AmpMenuShowOff6 0.0
+	Animate AmpMenuKnob6 xpos "c+138" Deaccel 0.000 0.200
+	Animate AmpMenuKnob6 FgColor "205 192 168 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn6 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff6 FgColor "190 140 60 61" Deaccel 0.040 0.200
+}
+event AmpMenuShowOn6
+{
+	StopEvent AmpMenuOn6 0.0
+	StopEvent AmpMenuOff6 0.0
+	StopEvent AmpMenuShowOff6 0.0
+	Animate AmpMenuKnob6 xpos "c+150" Linear 0.000 0.000
+	Animate AmpMenuKnob6 FgColor "34 24 4 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOff6 FgColor "190 140 60 0" Linear 0.000 0.000
+	Animate AmpMenuKnob6 FgColor "34 24 4 255" Deaccel 0.260 0.300
+	Animate AmpMenuTrackOn6 FgColor "243 186 10 255" Deaccel 0.260 0.300
+}
+event AmpMenuShowOff6
+{
+	StopEvent AmpMenuOn6 0.0
+	StopEvent AmpMenuOff6 0.0
+	StopEvent AmpMenuShowOn6 0.0
+	Animate AmpMenuKnob6 xpos "c+138" Linear 0.000 0.000
+	Animate AmpMenuKnob6 FgColor "205 192 168 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOn6 FgColor "243 186 10 0" Linear 0.000 0.000
+	Animate AmpMenuKnob6 FgColor "205 192 168 255" Deaccel 0.260 0.300
+	Animate AmpMenuTrackOff6 FgColor "190 140 60 61" Deaccel 0.260 0.300
+}
+event AmpMenuOn7
+{
+	StopEvent AmpMenuOff7 0.0
+	StopEvent AmpMenuShowOn7 0.0
+	StopEvent AmpMenuShowOff7 0.0
+	Animate AmpMenuKnob7 xpos "c+150" Deaccel 0.000 0.200
+	Animate AmpMenuKnob7 FgColor "34 24 4 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn7 FgColor "243 186 10 255" Deaccel 0.000 0.160
+	Animate AmpMenuTrackOff7 FgColor "190 140 60 0" Linear 0.000 0.120
+}
+event AmpMenuOff7
+{
+	StopEvent AmpMenuOn7 0.0
+	StopEvent AmpMenuShowOn7 0.0
+	StopEvent AmpMenuShowOff7 0.0
+	Animate AmpMenuKnob7 xpos "c+138" Deaccel 0.000 0.200
+	Animate AmpMenuKnob7 FgColor "205 192 168 255" Linear 0.000 0.160
+	Animate AmpMenuTrackOn7 FgColor "243 186 10 0" Accel 0.000 0.160
+	Animate AmpMenuTrackOff7 FgColor "190 140 60 61" Deaccel 0.040 0.200
+}
+event AmpMenuShowOn7
+{
+	StopEvent AmpMenuOn7 0.0
+	StopEvent AmpMenuOff7 0.0
+	StopEvent AmpMenuShowOff7 0.0
+	Animate AmpMenuKnob7 xpos "c+150" Linear 0.000 0.000
+	Animate AmpMenuKnob7 FgColor "34 24 4 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOff7 FgColor "190 140 60 0" Linear 0.000 0.000
+	Animate AmpMenuKnob7 FgColor "34 24 4 255" Deaccel 0.292 0.300
+	Animate AmpMenuTrackOn7 FgColor "243 186 10 255" Deaccel 0.292 0.300
+}
+event AmpMenuShowOff7
+{
+	StopEvent AmpMenuOn7 0.0
+	StopEvent AmpMenuOff7 0.0
+	StopEvent AmpMenuShowOn7 0.0
+	Animate AmpMenuKnob7 xpos "c+138" Linear 0.000 0.000
+	Animate AmpMenuKnob7 FgColor "205 192 168 0" Linear 0.000 0.000
+	Animate AmpMenuTrackOn7 FgColor "243 186 10 0" Linear 0.000 0.000
+	Animate AmpMenuKnob7 FgColor "205 192 168 255" Deaccel 0.292 0.300
+	Animate AmpMenuTrackOff7 FgColor "190 140 60 61" Deaccel 0.292 0.300
+}
+// ---- end of the settings menu ----

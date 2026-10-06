@@ -21,7 +21,7 @@ needs to open TCP port 27420 on their router, or you can all use a VPN like Tail
 
 ## In the game
 
-- **Y** to chat, **F10** for settings.
+- **Y** to chat, **ESC** for settings.
 - A dot in your crosshair means you can use what you're looking at.
 - Carrying something? Hold the **right mouse button** and move the mouse to turn it. **E** drops it.
 - You see each other as Alyx, with your names above your heads.

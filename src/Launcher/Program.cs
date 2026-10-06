@@ -62,7 +62,7 @@ namespace AlyxMP
                     {
                         ModFiles.EnsureNoVRSearchPaths(hla);
                         ModFiles.EnsureNoVRUseHook(hla);
-                        ModFiles.SetHuds(hla, settings.GlowHud, settings.Hl2Hud);
+                        ModFiles.EnsureHud(hla);
                         ModFiles.SetAutoReload(hla, settings.AutoReload);
                     }
                 }

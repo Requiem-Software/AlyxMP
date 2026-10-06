@@ -902,6 +902,85 @@ Scheme
 				"custom"	"1"
 			}
 		}
+// ---- Alyx MP settings menu (tools/menu_hud/make_menu.py) ----
+		AmpMenuTitle
+		{
+			"1"
+			{
+				"name"		"AlyxMPMenuTitle"
+				"tall"		"20"
+				"weight"	"0"
+				"antialias"	"1"
+				"custom"	"1"
+			}
+		}
+		AmpMenuLabel
+		{
+			"1"
+			{
+				"name"		"AlyxMPMenu"
+				"tall"		"10"
+				"weight"	"0"
+				"antialias"	"1"
+				"custom"	"1"
+			}
+		}
+		AmpMenuDesc
+		{
+			"1"
+			{
+				"name"		"AlyxMPMenuText"
+				"tall"		"7"
+				"weight"	"0"
+				"antialias"	"1"
+				"custom"	"1"
+			}
+		}
+		AmpMenuTag
+		{
+			"1"
+			{
+				"name"		"AlyxMPMenuKey"
+				"tall"		"5"
+				"weight"	"0"
+				"antialias"	"1"
+				"custom"	"1"
+			}
+		}
+		AmpMenuFxRule
+		{
+			"1"
+			{
+				"name"		"AlyxMPMenuFx"
+				"tall"		"12"
+				"weight"	"0"
+				"antialias"	"1"
+				"custom"	"1"
+			}
+		}
+		AmpMenuFxSwitch
+		{
+			"1"
+			{
+				"name"		"AlyxMPMenuFx"
+				"tall"		"24"
+				"weight"	"0"
+				"antialias"	"1"
+				"custom"	"1"
+			}
+		}
+		AmpMenuFxFoot
+		{
+			"1"
+			{
+				"name"		"AlyxMPMenuFx"
+				"tall"		"9"
+				"weight"	"0"
+				"antialias"	"1"
+				"custom"	"1"
+			}
+		}
+// ---- end of the settings menu ----
 	}
 
 	
