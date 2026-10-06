@@ -1,6 +1,0 @@
-local p = Entities:GetLocalPlayer()
-local fwd = p:GetForwardVector() fwd.z = 0 fwd = fwd:Normalized()
-local pos = p:EyePosition() + fwd * 45 + Vector(0, 0, -12)
-local e = SpawnEntityFromTableSynchronous("item_hlvr_clip_energygun", { targetname = "amp_test_item", origin = pos.x .. " " .. pos.y .. " " .. pos.z })
-e:SetThink(function() e:SetAbsOrigin(pos) e:SetAngles(0, 0, 0) return 0 end, "hold", 0)
-print("[AMP-IT] item at " .. tostring(pos))

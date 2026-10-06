@@ -10,3 +10,6 @@ obj/
 *.suo
 __pycache__/
 *.pyc
+
+# dev tools stay on our own PCs, not in the public repo
+tools/
