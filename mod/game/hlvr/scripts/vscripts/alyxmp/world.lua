@@ -13,12 +13,14 @@
 --   pr  ref x y z pitch yaw roll   it came to rest there; hand it back to local physics
 --   pg  ref                        an item disappeared (picked up / stored) - remove ours
 --   bk  ref                        something broke - break ours
---   kd  ref                        an enemy died - kill ours
+--   kd  ref x y z                  an enemy died (there) - kill ours
 --   tg  ref                        a story trigger fired for the sender - fire ours
 --   io  ref output                 an interaction (button, lever, hack, door...) fired - replay it
 --   us  ref                        the sender used something (NoVR's E / pickup script) - use ours
+--   ai  ref value pos              the sender is working a wheel / lever / sliding door: how far along
+--                                  it is, and the Position output that goes with it (or "-")
 --   nh  ref hp                     host: an enemy's health
---   np  ref x y z                  host: an enemy's position
+--   np  ref x y z yaw              host: an enemy's position
 --   nd  ref damage                 a player hurt an enemy in their world - the host applies it
 --   sh  weapon x y z hit nx ny nz  the sender's shot landed there - draw a tracer and impact
 --   J   <any of the above>         catch-up replay after loading the level fresh (VR joining a NoVR
@@ -35,6 +37,10 @@ local PROP_CLASSES = {
 }
 local SKIP_NPCS = { npc_bullseye = true, npc_enemyfinder = true, npc_furniture = true, npc_maker = true, npc_template_maker = true }
 local STATIC_NPCS = { npc_barnacle = true, npc_turret_floor = true }
+-- enemies that go after the other players' avatars too (each avatar carries an invisible target)
+local HOSTILE_NPCS = { "npc_combine_s", "npc_zombie", "npc_antlion", "npc_headcrab", "npc_headcrab_black",
+    "npc_headcrab_runner", "npc_headcrab_armored", "npc_headcrab_fast", "npc_manhack", "npc_turret_floor" }
+local TARGET_NAME = "amp_target"
 -- picked up by one player, gone for everyone; but using one never gives it to the others
 local CONSUMABLE_PREFIXES = { "item_hlvr_clip", "item_hlvr_crafting_currency", "item_healthvial", "item_hlvr_grenade",
     "item_item_crate", "item_hlvr_prop_ammobag" }
@@ -58,12 +64,21 @@ local PROP_INTERP = 0.12      -- remote objects are shown this far behind their 
 local PROP_TIMEOUT = 2.5      -- give an object back to physics if its mover goes quiet
 local SETTLE_TIME = 1.5       -- after an object comes to rest here, ignore its settling wobble
 local ITEM_RADIUS = 220
-local NPC_POS_STEP = 40       -- host sends an enemy's position when it moved this far
-local NPC_TELEPORT = 420      -- clients snap enemies that are further off than this
-local NPC_STEER = 180         -- and walk them back when they're further off than this
+local CLAIM_RANGE = 200       -- a guest only takes over objects that start moving this close to them; anything
+                              -- further off was moved by an enemy or an explosion, and the host streams that
+local NPC_POS_STEP = 24       -- host sends an enemy's position when it moved this far...
+local NPC_YAW_STEP = 25       -- ...or turned this much
+local NPC_TELEPORT = 360      -- clients snap enemies that are further off than this
+local NPC_STEER = 120         -- and walk them back when they're further off than this
+local NPC_MATCH = 400         -- an enemy we can't find by its ref: the nearest one of its kind this close
 local REF_TOLERANCE = 64      -- how far apart two games' first sightings of the same entity may be
 local NPC_TOLERANCE = 200     -- enemies are often first seen a moment after they spawn and start moving
 local STAMP_SCAN = 1.0        -- look for new entities to stamp this often
+local NPC_STAMP_SCAN = 0.2    -- new enemies get stamped quickly, before they've walked far from their spawn
+local AI_RATE = 1 / 15        -- wheels / levers / sliding doors being worked
+local AI_INTERP = 0.12
+local AI_IDLE = 0.35          -- unchanged this long: send the final value
+local AI_DRIVE = 20           -- after we use one, its movement is ours to stream for this long
 local USE_DELAY = 0.25        -- replayed uses wait this long, so uses they trigger themselves come first
 local USE_SEEN = 1.5          -- a use that happened here this recently isn't replayed
 
@@ -102,6 +117,7 @@ end
 
 -- reset on every load: handles from the previous level are dead
 W.info = setmetatable({}, { __mode = "k" })
+W.infoIdx = {}
 W.byHash = {}
 W.refCache = {}
 W.props = {}
@@ -109,6 +125,11 @@ W.seen = setmetatable({}, { __mode = "k" })
 W.items = {}
 W.npcs = setmetatable({}, { __mode = "k" })
 W.npcList = {}
+W.npcClaim = setmetatable({}, { __mode = "k" })   -- enemy -> the ref it was matched to
+W.anims = setmetatable({}, { __mode = "k" })
+W.replays = {}                                    -- uses we're replaying right now (their scripts chain on)
+W.nextNpcStamp = 0
+W.nextAnims = 0
 W.suppressBreak = setmetatable({}, { __mode = "k" })
 W.suppressItem = {}
 W.suppressKill = setmetatable({}, { __mode = "k" })
@@ -140,7 +161,16 @@ end
 local function infoOf(e)
     local i = W.info[e]
     if i then return i end
+    local idx = e:GetEntityIndex()
     local h = e:Attribute_GetIntValue("amp_h", 0)
+    -- an entity that's on its way out (a constraint that just broke, an enemy that just died) has lost
+    -- its name by the time our output hooks run; it keeps its stamp, so find what we called it by that
+    local known = W.infoIdx[idx]
+    if known and h ~= 0 and known.h == h and known.pos.x == e:Attribute_GetFloatValue("amp_x", 0)
+        and known.pos.y == e:Attribute_GetFloatValue("amp_y", 0) and known.pos.z == e:Attribute_GetFloatValue("amp_z", 0) then
+        W.info[e] = known
+        return known
+    end
     if h == 0 then
         -- first sighting in this game (and not inherited from the host's save): stamp it
         h = hash(e:GetClassname() .. "|" .. (e:GetModelName() or ""))
@@ -151,9 +181,20 @@ local function infoOf(e)
         e:Attribute_SetFloatValue("amp_z", o.z)
     end
     local pos = Vector(e:Attribute_GetFloatValue("amp_x", 0), e:Attribute_GetFloatValue("amp_y", 0), e:Attribute_GetFloatValue("amp_z", 0))
-    i = { h = h, pos = pos,
-          ref = string.format("%x@%d,%d,%d", h, math.floor(pos.x + 0.5), math.floor(pos.y + 0.5), math.floor(pos.z + 0.5)) }
+    local at = string.format("@%d,%d,%d", math.floor(pos.x + 0.5), math.floor(pos.y + 0.5), math.floor(pos.z + 0.5))
+    -- story things mostly have names of their own, which every game agrees on even when the first
+    -- sighting doesn't (the shotgun is stamped mid-air while its zombie is still being hoisted). NoVR
+    -- names unnamed things after their index when they're used; those numbers don't count.
+    local name = e:GetName() or ""
+    local ref
+    if #name <= 64 and name:match("^[%w_%-%.]+$") and name:match("%a") and name:sub(1, 4) ~= "amp_" then
+        ref = "=" .. name .. at
+    else
+        ref = string.format("%x", h) .. at
+    end
+    i = { h = h, pos = pos, ref = ref }
     W.info[e] = i
+    W.infoIdx[idx] = i
     local list = W.byHash[h]
     if not list then
         list = {}
@@ -168,6 +209,23 @@ local function refOf(e) return infoOf(e).ref end
 local function resolve(ref, tolerance)
     local e = W.refCache[ref]
     if e and IsValidEntity(e) then return e end
+    local name, nx, ny, nz = ref:match("^=([^@]+)@(%-?%d+),(%-?%d+),(%-?%d+)$")
+    if name then
+        -- by name; several share it: the one first seen nearest the sender's sighting
+        local list = Entities:FindAllByName(name)
+        local best = list[1]
+        if #list > 1 then
+            local target = Vector(tonumber(nx), tonumber(ny), tonumber(nz))
+            local bestD = (tolerance or REF_TOLERANCE) * 2
+            best = nil
+            for _, c in ipairs(list) do
+                local d = (infoOf(c).pos - target):Length()
+                if d < bestD then best, bestD = c, d end
+            end
+        end
+        if best then W.refCache[ref] = best end
+        return best
+    end
     local hs, x, y, z = ref:match("^(%x+)@(%-?%d+),(%-?%d+),(%-?%d+)$")
     if not hs then return nil end
     local list = W.byHash[tonumber(hs, 16)]
@@ -190,6 +248,7 @@ end
 local function ours(e)
     local name = e:GetName()
     return name == "amp_pp" or name == "amp_hud" or name == "alyxmp_core" or name == "alyxmp_precache"
+        or name == TARGET_NAME or name == "amp_rel"
 end
 
 -- stamp everything that exists, so later sightings (and refs from the others) can find it
@@ -213,6 +272,12 @@ local function propState(e)
         W.props[e] = st
     end
     return st
+end
+
+-- stop an object's own motion so it holds the pose we give it
+local function still(e)
+    if e.SetVelocity then e:SetVelocity(Vector(0, 0, 0)) end
+    if SetPhysAngularVelocity then pcall(SetPhysAngularVelocity, e, Vector(0, 0, 0)) end
 end
 
 local function releaseRemote(st)
@@ -257,7 +322,8 @@ local function scanProps(now, p)
                         W.seen[e] = cur
                         st.lastMove = now
                     end
-                elseif d > START_DIST or r > (e:GetClassname() == "prop_door_rotating_physics" and DOOR_TURN or START_TURN) then
+                elseif (d > START_DIST or r > (e:GetClassname() == "prop_door_rotating_physics" and DOOR_TURN or START_TURN))
+                    and (isHost() or held(e) or (cur.o - p:GetOrigin()):Length() < CLAIM_RANGE) then
                     -- it left its resting spot in our world: we simulate it, the others follow
                     st = st or propState(e)
                     st.owner = myId()
@@ -331,6 +397,7 @@ local function renderRemote(now)
                     if pos then
                         e:SetAbsOrigin(pos)
                         e:SetAngles(ang[1], ang[2], ang[3])
+                        if not st.frozen then still(e) end
                     end
                 end
             end
@@ -349,11 +416,12 @@ local function onPropMsg(from, ref, rest, x, y, z, ax, ay, az)
         releaseRemote(st)
         e:SetAbsOrigin(pos)
         e:SetAngles(ax, ay, az)
+        still(e)
         st.owner = nil
         st.quietUntil = Time() + SETTLE_TIME
         return
     end
-    if not st.frozen then
+    if not st.frozen and e.DisableMotion then
         e:DisableMotion()
         st.frozen = true
     end
@@ -441,6 +509,7 @@ local IO_HOOKS = {
     prop_animinteractable = withCompletions({}),
     prop_combine_ball = { "OnPlayerPickup", "OnPlayerUse" },
     prop_door_rotating = { "OnOpen", "OnClose" },
+    prop_door_rotating_physics = { "OnOpen", "OnClose", "OnFullyOpen", "OnFullyClosed" },
     prop_handpose = { "OnPlayerPickup", "OnPlayerUse", "OnHandPosed" },
     prop_russell_headset = { "OnPlayerPickup", "OnPlayerUse" },
     prop_welded_physics = { "OnPlayerPickup", "OnPlayerUse" },
@@ -448,6 +517,10 @@ local IO_HOOKS = {
     trigger_look = { "OnTrigger" },
     trigger_multiple = { "OnStartTouch", "OnEndTouch", "OnTrigger" },
 }
+-- physics constraints: a bar pulled out of a door's handles, a gun taken out of a dead hand...
+local CONSTRAINTS = { "phys_constraint", "phys_ballsocket", "phys_hinge", "phys_hinge_local", "phys_slideconstraint",
+    "phys_lengthconstraint", "phys_pulleyconstraint", "phys_ragdollconstraint", "phys_genericconstraint" }
+for _, c in ipairs(CONSTRAINTS) do IO_HOOKS[c] = { "OnBreak" } end
 local IO_SET = {}
 for class, outs in pairs(IO_HOOKS) do
     IO_SET[class] = {}
@@ -460,6 +533,7 @@ local IO_INPUTS = {
     func_button = BUTTON_INPUTS, func_physical_button = BUTTON_INPUTS, func_rot_button = BUTTON_INPUTS,
     prop_door_rotating = DOOR_INPUTS, func_door = DOOR_INPUTS, func_door_rotating = DOOR_INPUTS,
 }
+for _, c in ipairs(CONSTRAINTS) do IO_INPUTS[c] = { OnBreak = "Break" } end
 local TRIGGERS = { trigger_once = true, trigger_multiple = true, trigger_look = true }
 -- how close the local player must be for an interaction to count as theirs
 local IO_RANGE = { info_hlvr_toner_path = 900 }
@@ -567,6 +641,164 @@ local function hookAll()
             end
         end
     end
+    -- a VR hand grabbing / letting go of a wheel or lever (games saved by 0.4 lack these, hence the own flag)
+    for _, e in ipairs(Entities:FindAllByClassname("prop_animinteractable")) do
+        if e:Attribute_GetIntValue("amp_ai", 0) == 0 then
+            e:Attribute_SetIntValue("amp_ai", 1)
+            e:RedirectOutput("OnInteractStart", "AMP_AnimGrab", e)
+            e:RedirectOutput("OnInteractStop", "AMP_AnimRelease", e)
+        end
+    end
+end
+
+---------------------------------------------------------------------------------------------------
+-- wheels, levers, cranks, sliding doors (prop_animinteractable): whoever works one streams how far
+-- along it is and the others' copies follow; finishing it fires its outputs everywhere (io)
+
+local CRANK_MODEL = "models/interaction/anim_interact/hand_crank_wheel/hand_crank_wheel.vmdl"
+-- the Position output NoVR fires while the player works these (useextra.lua), from the completion
+local NOVR_POSITION = { ["12712_shotgun_wheel"] = function(v) return v / 2 end }
+
+-- what NoVR's script does when the player finishes these (useextra.lua); when another player
+-- finished it, it has to happen here too
+local NOVR_DONE = {
+    ["12712_shotgun_wheel"] = function()
+        -- the winch locks with the bar back in and the shotgun on the lowered zombie can be taken
+        local bar = Entities:FindByName(nil, "12712_shotgun_bar_for_wheel")
+        if bar then bar:Kill() end
+        SpawnEntityFromTableSynchronous("prop_dynamic_override", { targetname = "12712_shotgun_bar_for_wheel",
+            model = "models/props/misc_debris/vort_winch_pipe.vmdl", origin = "711.395874 1319.248047 -168.302490",
+            angles = "0.087952 120.220528 90.588112" })
+        SendToConsole("ent_remove shotgun_pickup_blocker")
+    end,
+    barricade_door = function() SendToConsole("ent_fire barricade_lock_relay Trigger") end,
+    verticaldoor_wheel = function()
+        Entities:GetLocalPlayer():Attribute_SetIntValue("locked_jeff_in_freezer", 1)
+        SendToConsole("ent_fire relay_verticaldoor_opened Trigger")
+    end,
+}
+-- NoVR lets these be worked again after letting go; everything else is done once it's done
+local NOVR_REUSABLE = { "elev_anim_door", "tractor_beam_console_lever", "console_selector_interact", "12712_shotgun_wheel" }
+
+local function animState(e)
+    local st = W.anims[e]
+    if not st then
+        st = { snaps = {} }
+        W.anims[e] = st
+    end
+    return st
+end
+
+local function animTouched(e, holding)
+    local st = animState(e)
+    if st.remote then return end   -- someone else is working it
+    st.driveUntil = Time() + (holding and 3600 or AI_DRIVE)
+end
+
+function AMP_AnimGrab(self)
+    if AMP and AMP.World == W and active() and self and IsValidEntity(self) then animTouched(self, true) end
+end
+
+function AMP_AnimRelease(self)
+    if AMP and AMP.World == W and active() and self and IsValidEntity(self) then animTouched(self, false) end
+end
+
+-- the Position output the others should fire along with the completion value, or nil
+local function animPosition(e, v)
+    if A.isVR then return v end   -- the game itself fires it as the hand moves
+    local f = NOVR_POSITION[e:GetName()]
+    if f then return f(v) end
+    if e:GetModelName() == CRANK_MODEL then return v end
+    return nil
+end
+
+local function sendAnims(now)
+    for e, st in pairs(W.anims) do
+        if not IsValidEntity(e) then
+            W.anims[e] = nil
+        elseif not st.remote and now < (st.driveUntil or 0) then
+            local v = e:GetCycle()
+            if not st.lastV or math.abs(v - st.lastV) > 0.0005 then st.lastV, st.lastChange = v, now end
+            local moving = now - (st.lastChange or -100) < AI_IDLE
+            if (not st.sent or math.abs(v - st.sent) > 0.0005) and (not moving or now - (st.sentAt or -100) >= AI_RATE) then
+                st.sent, st.sentAt = v, now
+                local pos = animPosition(e, v)
+                send("ai", refOf(e), string.format("%.4f", v), pos and string.format("%.4f", pos) or "-")
+            end
+        end
+    end
+end
+
+local function applyAnim(e, st, v, pos)
+    if st.applied and math.abs(v - st.applied) < 0.0002 then return end
+    st.applied = v
+    DoEntFireByInstanceHandle(e, "SetCompletionValue", string.format("%.4f", v), 0, nil, nil)
+    -- SetCompletionValue fires nothing; whatever follows the wheel (a winch, a gate) listens to Position
+    if pos then
+        if e:GetName() == "" then e:SetEntityName("amp_ai_" .. e:GetEntityIndex()) end
+        SendToConsole("ent_fire_output " .. e:GetName() .. " Position " .. string.format("%.4f", pos))
+    end
+end
+
+local function renderAnims(now)
+    for e, st in pairs(W.anims) do
+        if st.remote then
+            local snaps = st.snaps
+            local n = #snaps
+            if not IsValidEntity(e) then
+                W.anims[e] = nil
+            elseif n > 0 then
+                local rt = now - AI_INTERP
+                local v, pos
+                if rt <= snaps[1].t or n == 1 then
+                    v, pos = snaps[1].v, snaps[1].pos
+                elseif rt >= snaps[n].t then
+                    v, pos = snaps[n].v, snaps[n].pos
+                else
+                    for i = n - 1, 1, -1 do
+                        local a, b = snaps[i], snaps[i + 1]
+                        if a.t <= rt then
+                            local f = (rt - a.t) / math.max(b.t - a.t, 0.001)
+                            v = a.v + (b.v - a.v) * f
+                            if a.pos and b.pos then pos = a.pos + (b.pos - a.pos) * f else pos = b.pos end
+                            break
+                        end
+                    end
+                end
+                while #snaps > 2 and snaps[2].t < rt do table.remove(snaps, 1) end
+                if v then applyAnim(e, st, v, pos) end
+                -- the stream ended and we've played it out: it's anyone's again
+                if now - st.lastRecv > 1.0 and rt >= snaps[#snaps].t then
+                    st.remote, st.snaps, st.applied, st.lastV, st.sent = nil, {}, nil, nil, nil
+                end
+            end
+        end
+    end
+end
+
+local function onAnimMsg(from, ref, v, pos)
+    local e = resolve(ref)
+    if not e or e:GetClassname() ~= "prop_animinteractable" then return end
+    local st = animState(e)
+    local now = Time()
+    if now < (st.driveUntil or 0) and from > myId() then return end   -- we're working it too and win ties
+    st.driveUntil = nil
+    st.remote = from
+    st.lastRecv = now
+    table.insert(st.snaps, { t = now, v = v, pos = pos })
+    if #st.snaps > 20 then table.remove(st.snaps, 1) end
+end
+
+-- another player finished working one (its completion output came in)
+local function animCompleted(e)
+    if A.isVR or e:Attribute_GetIntValue("amp_done", 0) == 1 then return end
+    e:Attribute_SetIntValue("amp_done", 1)
+    local name = e:GetName()
+    local reusable = false
+    for _, s in ipairs(NOVR_REUSABLE) do if name:find(s, 1, true) then reusable = true end end
+    if not reusable then e:Attribute_SetIntValue("used", 1) end
+    local f = NOVR_DONE[name]
+    if f then f() end
 end
 
 local function onTrigger(ref)
@@ -598,6 +830,22 @@ local function onOutput(ref, output)
     else
         e:FireOutput(output, p, e, nil, 0)
     end
+    if class == "prop_animinteractable" and output:sub(1, 13) == "OnCompletionA" then animCompleted(e) end
+end
+
+-- a use we're replaying runs NoVR's script, which often goes on to use other things nearby (a lock
+-- opens its door); those are part of the replay, not something the local player did
+local function partOfReplay(e, now)
+    local c = e:GetCenter()
+    for i = #W.replays, 1, -1 do
+        local r = W.replays[i]
+        if now > r.untilT then
+            table.remove(W.replays, i)
+        elseif (r.pos - c):Length() < 400 then
+            return true
+        end
+    end
+    return false
 end
 
 -- NoVR runs scripts/vscripts/useextra.lua on whatever the player presses E on or picks up; that's
@@ -608,8 +856,16 @@ function AMP_OnUseExtra(e)
     local ref = refOf(e)
     local now = Time()
     W.useSeen[ref] = now
-    if now < (W.useQuiet[ref] or 0) then return end   -- it's our replay running
-    if consumable(e:GetClassname()) then return end
+    if now < (W.useQuiet[ref] or 0) or partOfReplay(e, now) then return end   -- it's our replay running
+    local class = e:GetClassname()
+    if consumable(class) then return end
+    if class == "prop_door_rotating_physics" or (e:GetModelName() or ""):find("doorhandle", 1, true) then return end
+    if class == "prop_animinteractable" then
+        -- NoVR animates it for as long as E is held; the others follow how far it gets (ai), and
+        -- running NoVR's script on their copy would animate it a second time (or freeze them in place)
+        animTouched(e, false)
+        return
+    end
     send("us", ref)
 end
 
@@ -621,12 +877,14 @@ local function runUses(now)
             table.remove(W.useQueue, i)
             if u.journal or now - (W.useSeen[u.ref] or -100) >= USE_SEEN then
                 local e = resolve(u.ref)
-                if e and not consumable(e:GetClassname()) then
+                if e and not consumable(e:GetClassname()) and e:GetClassname() ~= "prop_animinteractable" then
                     W.useSeen[u.ref] = now
                     W.useQuiet[u.ref] = now + USE_SEEN
+                    table.insert(W.replays, { pos = e:GetCenter(), untilT = now + 0.6 })
                     local p = Entities:GetLocalPlayer()
-                    if A.isVR and questItem(e) then
-                        -- no wrist pockets in VR: put our copy right in front of us to grab
+                    if A.isVR and (questItem(e) or e:GetClassname():sub(1, 16) == "item_hlvr_weapon") then
+                        -- no wrist pockets (or NoVR's instant weapon pickup) in VR: put our copy right
+                        -- in front of us to grab
                         local hmd = p:GetHMDAvatar()
                         local eye = hmd and hmd:GetCenter() or p:EyePosition()
                         local dir = (hmd or p):GetForwardVector()
@@ -696,7 +954,7 @@ end
 -- health and position, and damage anyone deals is applied on the host
 
 local function isNpc(e)
-    return e.IsNPC and e:IsNPC() and not SKIP_NPCS[e:GetClassname()]
+    return e.IsNPC and e:IsNPC() and not SKIP_NPCS[e:GetClassname()] and not ours(e)
 end
 
 local function refreshNpcList()
@@ -707,6 +965,30 @@ local function refreshNpcList()
         e = Entities:Next(e)
     end
     W.npcList = list
+end
+
+-- enemies spawned mid-game are stamped (named) where they appear, before they walk off: every game
+-- then names them alike
+local function stampNewNpcs()
+    for _, class in ipairs(HOSTILE_NPCS) do
+        for _, e in ipairs(Entities:FindAllByClassname(class)) do
+            if not W.info[e] and not ours(e) then infoOf(e) end
+        end
+    end
+end
+
+-- every game's enemies also go after the other players' avatars: each avatar carries an invisible
+-- npc_bullseye named amp_target (main.lua) and these always-on relationships cover enemies and avatars
+-- that appear later too
+local function ensureRelationships()
+    if Entities:FindByName(nil, "amp_rel") then return end
+    for _, class in ipairs(HOSTILE_NPCS) do
+        local rel = SpawnEntityFromTableSynchronous("ai_relationship", {
+            targetname = "amp_rel", subject = class, target = TARGET_NAME, disposition = 1, rank = 0,
+            StartActive = 1, Reciprocal = 0,
+        })
+        if rel then DoEntFireByInstanceHandle(rel, "ApplyRelationship", "", 0.1, nil, nil) end
+    end
 end
 
 local function hostSendNpcs(now)
@@ -724,9 +1006,11 @@ local function hostSendNpcs(now)
             end
             if not STATIC_NPCS[e:GetClassname()] then
                 local o = e:GetOrigin()
-                if not rec.pos or (o - rec.pos):Length() > NPC_POS_STEP or (now - (rec.posAt or 0) > 2 and (o - rec.pos):Length() > 4) then
-                    send("np", refOf(e), f1(o.x), f1(o.y), f1(o.z))
-                    rec.pos, rec.posAt = o, now
+                local yaw = e:GetAngles().y
+                if not rec.pos or (o - rec.pos):Length() > NPC_POS_STEP or math.abs(angDiff(yaw, rec.yaw or yaw)) > NPC_YAW_STEP
+                    or (now - (rec.posAt or 0) > 2 and (o - rec.pos):Length() > 4) then
+                    send("np", refOf(e), f1(o.x), f1(o.y), f1(o.z), f1(yaw))
+                    rec.pos, rec.yaw, rec.posAt = o, yaw, now
                 end
             end
         end
@@ -744,17 +1028,39 @@ local function clientCheckDamage(p)
             end
             local hp = e:GetHealth()
             if rec.lastHp and hp < rec.lastHp and hp ~= rec.expectHp then
-                send("nd", refOf(e), rec.lastHp - hp)
+                local o = e:GetOrigin()
+                send("nd", W.npcClaim[e] or refOf(e), rec.lastHp - hp, f1(o.x), f1(o.y), f1(o.z))
             end
             rec.lastHp = hp
         end
     end
 end
 
-local function npcByRef(ref)
+-- The enemy another game means. Normally its ref finds it; enemies that spawned while moving can be
+-- stamped a little apart in each game, so failing that take the nearest one of the same kind (hash)
+-- around where the sender says it is that isn't already matched to something else.
+local function npcByRef(ref, near)
     local e = resolve(ref, NPC_TOLERANCE)
-    if e and isNpc(e) then return e end
-    return nil
+    if e and isNpc(e) and (W.npcClaim[e] == nil or W.npcClaim[e] == ref) then
+        W.npcClaim[e] = ref
+        return e
+    end
+    if not near then return nil end
+    local hs = ref:match("^(%x+)@")
+    local h = hs and tonumber(hs, 16)
+    if not h then return nil end
+    local best, bestD = nil, NPC_MATCH
+    for _, c in ipairs(W.byHash[h] or {}) do
+        if IsValidEntity(c) and isNpc(c) and c:IsAlive() and (W.npcClaim[c] == nil or W.npcClaim[c] == ref) then
+            local d = (c:GetOrigin() - near):Length()
+            if d < bestD then best, bestD = c, d end
+        end
+    end
+    if best then
+        W.npcClaim[best] = ref
+        W.refCache[ref] = best
+    end
+    return best
 end
 
 local function onNpcHealth(ref, hp)
@@ -769,20 +1075,21 @@ local function onNpcHealth(ref, hp)
     end
 end
 
-local function onNpcPos(ref, pos)
-    local e = npcByRef(ref)
+local function onNpcPos(ref, pos, yaw)
+    local e = npcByRef(ref, pos)
     if not e or STATIC_NPCS[e:GetClassname()] then return end
     local d = (e:GetOrigin() - pos):Length()
     if d > NPC_TELEPORT then
         e:SetAbsOrigin(pos)
+        if yaw then e:SetAngles(0, yaw, 0) end
     elseif d > NPC_STEER then
         pcall(function() e:NpcForceGoPosition(pos, true, 32) end)
     end
 end
 
-local function onNpcDamage(ref, dmg)
+local function onNpcDamage(ref, dmg, near)
     if not isHost() then return end
-    local e = npcByRef(ref)
+    local e = npcByRef(ref, near)
     if not e or not e:IsAlive() then return end
     local p = Entities:GetLocalPlayer()
     local info = CreateDamageInfo(p, p, Vector(0, 0, 0), e:GetCenter(), dmg, 2)
@@ -790,8 +1097,8 @@ local function onNpcDamage(ref, dmg)
     DestroyDamageInfo(info)
 end
 
-local function onKilled(ref)
-    local e = npcByRef(ref)
+local function onKilled(ref, near)
+    local e = npcByRef(ref, near)
     if not e or e:GetHealth() <= 0 then return end
     W.suppressKill[e] = true
     DoEntFireByInstanceHandle(e, "SetHealth", "0", 0, nil, nil)
@@ -818,6 +1125,11 @@ function W.Tick(now, p)
     if now >= W.nextStamp then
         W.nextStamp = now + STAMP_SCAN
         stampAll()
+        ensureRelationships()
+    end
+    if now >= W.nextNpcStamp then
+        W.nextNpcStamp = now + NPC_STAMP_SCAN
+        stampNewNpcs()
     end
     if now >= W.nextScan then
         W.nextScan = now + 0.1
@@ -825,6 +1137,8 @@ function W.Tick(now, p)
     end
     sendOwned(now)
     renderRemote(now)
+    sendAnims(now)
+    renderAnims(now)
     runUses(now)
     if now >= W.nextItems then
         W.nextItems = now + 0.25
@@ -884,11 +1198,13 @@ function W.Receive(from, kind, a)
             DoEntFireByInstanceHandle(e, "Break", "", 0, nil, nil)
         end
     elseif kind == "kd" then
-        onKilled(ref)
+        onKilled(ref, n(4) and Vector(n(2), n(3), n(4)) or nil)
     elseif kind == "tg" then
         onTrigger(ref)
     elseif kind == "io" then
         if a[2] then onOutput(ref, a[2]) end
+    elseif kind == "ai" then
+        if n(2) then onAnimMsg(from, ref, n(2), n(3)) end
     elseif kind == "us" then
         if W.journal then
             -- one after another, the way they happened
@@ -900,9 +1216,9 @@ function W.Receive(from, kind, a)
     elseif kind == "nh" then
         if n(2) and not isHost() then onNpcHealth(ref, n(2)) end
     elseif kind == "np" then
-        if n(4) and not isHost() then onNpcPos(ref, Vector(n(2), n(3), n(4))) end
+        if n(4) and not isHost() then onNpcPos(ref, Vector(n(2), n(3), n(4)), n(5)) end
     elseif kind == "nd" then
-        if n(2) then onNpcDamage(ref, n(2)) end
+        if n(2) then onNpcDamage(ref, n(2), n(5) and Vector(n(3), n(4), n(5)) or nil) end
     end
 end
 
@@ -926,7 +1242,8 @@ function W.OnKilled(idx)
         W.suppressKill[e] = nil
         return
     end
-    send("kd", refOf(e))
+    local o = e:GetOrigin()
+    send("kd", W.npcClaim[e] or refOf(e), f1(o.x), f1(o.y), f1(o.z))
 end
 
 --- the local player fired: tell the others where the bullet went

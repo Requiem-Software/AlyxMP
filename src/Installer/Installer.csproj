@@ -8,7 +8,7 @@
     <RootNamespace>AlyxMP</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\assets\alyxmp.ico</ApplicationIcon>
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
     <Product>Alyx Multiplayer</Product>
     <Description>Alyx Multiplayer setup</Description>
     <Copyright>Fan-made mod, not affiliated with Valve</Copyright>
@@ -27,7 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\..\mod\game\**\*.lua" LogicalName="payload/game/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\mod\game\**\*.lua;..\..\mod\game\**\*.res;..\..\mod\game\**\*.txt" LogicalName="payload/game/%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="$(LauncherExe)" LogicalName="payload/launcher/AlyxMP.exe" />
   </ItemGroup>
 

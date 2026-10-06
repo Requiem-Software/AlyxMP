@@ -94,7 +94,7 @@ namespace AlyxMP
                 }
                 else
                 {
-                    novrNote.Text = "Downloads about 140 MB from github.com/HLANoVR/HLA-NoVR (GPL-3.0, by the NoVR team).";
+                    novrNote.Text = "Downloads about 140 MB from github.com/HLANoVR/HLA-NoVR (GPL-3.0, by the NoVR team). Alyx MP modifies it slightly.";
                     if (!busy && !installed) novrCheck.Checked = true;
                 }
             }

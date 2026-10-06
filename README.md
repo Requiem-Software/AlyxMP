@@ -32,16 +32,24 @@ ask whether *AlyxMP* may use the network: allow it.
 world, and you appear next to them.
 
 **In game**
-- Other players appear as Alyx (moving with the Combine soldiers' animations: setting off, running, stopping, crouching) with their name above them. The top-left corner lists who's playing and how
-  far away they are.
-- **Loading zones:** when you walk into a level exit, a box appears with *LOADING ZONE 1/2*. The next area
-  only loads once everybody is standing inside it, and the text says who it's waiting for.
+- Other players appear as Alyx (moving with the Combine soldiers' animations: setting off, running, stopping,
+  crouching, with the steps matched to how fast they move) with their name above them. Their flashlight shows
+  when they turn it on. The top-left corner lists who's playing and how far away they are.
+- **Loading zones:** when you get within a couple of metres of a level exit, it fades in, outlined on the floor
+  and marked *LOADING ZONE*. The next area only loads once everybody is standing inside it, and the screen says
+  who it's waiting for. Whoever finishes loading
+  first waits, paused, until everyone is in.
 - If you die, you respawn next to the host from the host's world.
 - If someone's world gets out of step, press **RESYNC MY WORLD** (or **SEND MY WORLD TO ALL** as the host).
-- Chat: press **Y** in game to open the chat box (Enter sends, Esc cancels), or type in the launcher
+- Chat: press **Y** in game to open the chat line (Enter sends, Esc cancels), or type in the launcher
   window. Messages show up on the left side of everyone's screen.
-- The crosshair tells you what you can interact with: **[E] PICK UP**, **[E] USE** or **[E] PULL**
-  (gravity gloves).
+- A dot appears in the middle of the crosshair when E would do something with what you're looking at.
+- **F10** opens the settings menu: auto reload, the Half-Life 2 HUD, name tags, the interaction dot, the player
+  list, chat messages and loading zone outlines. The first two change game files and apply the next time the
+  game starts; the rest apply at once.
+- The game saves itself every 5 minutes and whenever everyone has made it into a new level (the host's
+  autosave, which is the world everyone comes back to).
+- The HUD, menus and messages use Half-Life: Alyx's own typeface (Raju) and look.
 
 ## How it works
 
@@ -55,14 +63,20 @@ loading zones. The host is in charge:
 - Level changes happen together.
 - Objects someone moves, throws or carries move in everyone's game (smoothed); items someone picks up
   disappear for everyone; anything someone breaks breaks for everyone.
-- Story triggers, buttons, levers, cranks, doors, hacking puzzles, combine consoles, wire (toner) puzzles and
-  story items (Russell's headset, the gravity gloves, weapons) that one player uses are replayed in
-  everyone's game, so doors open, cutscenes start and items are handed out for all. Anything you press E
-  on goes through NoVR's own interaction script, and the launcher adds one line to it
+- Story triggers, buttons, levers, doors, hacking puzzles, combine consoles, wire (toner) puzzles and
+  story items (Russell's headset, the gravity gloves, batteries, keycards, weapons) that one player uses are
+  replayed in everyone's game, so doors open, cutscenes start and items are handed out for all: when one
+  player takes a gun (like the shotgun off the hanging zombie), everyone gets it. Anything you press E on goes
+  through NoVR's own interaction script, and the launcher adds one line to it
   (`scripts/vscripts/useextra.lua`) so the others run the same thing.
+- Wheels, cranks, levers and sliding doors that you work with your hands (the winch in front of the
+  shotgun, the greenhouse door after Eli's call) move in everyone's game as you turn them.
+- Bars and pipes wedged through door handles: pulling one out frees the door for everyone.
 - Drawing on windows/boards with the markers shows up for everyone (the marker's strokes are replayed).
 - Enemies: the host's game is the reference for their health and position; damage anyone deals counts on
-  the host, and when anyone kills an enemy it dies in everyone's game.
+  the host, and when anyone kills an enemy it dies in everyone's game. Enemies go after every player, not
+  just the one whose game they're in (each player's avatar carries an invisible target for them), and
+  objects that enemies or explosions knock around are moved by the host's game for everyone.
 - Shots show for everyone with muzzle flash, sound, tracer and impact.
 
 ### VR and NoVR together
@@ -74,8 +88,8 @@ them next to the host. VR games also skip the "Press trigger to start" screen af
 
 ### Limits
 
-- Each world still runs its own AI: enemies attack the player in their own game and are pulled back in
-  line with the host's copy. Weapons aren't shared: everyone picks up their own.
+- Each world still runs its own AI: an enemy attacks the players in each game on its own and is pulled back
+  in line with the host's copy, so the details of a fight can differ a little between players.
 - Objects are matched between games by what they are and where they were first seen (stamped into the
   save), so things spawned mid-level (e.g. crate loot) can still differ per player.
 - VR players appear with full-body animation; their real hand movements aren't mirrored yet.
@@ -86,10 +100,21 @@ them next to the host. VR games also skip the "Press trigger to start" screen af
 
 - `game/hlvr/scripts/vscripts/alyxmp/`: the mod's Lua
 - `game/hlvr/cfg/skill_manifest.cfg`: adds `script_reload_code alyxmp/main` so it loads on every map
-- With NoVR: one line at the top of `game/hlvr/scripts/vscripts/useextra.lua` (removed on uninstall)
 - `AlyxMP/` in the game folder: the launcher
-- With NoVR: NoVR's files, plus two search paths added to `game/hlvr/gameinfo.gi` (a backup is kept as
+- With NoVR: NoVR's files, plus its search paths added to `game/hlvr/gameinfo.gi` (a backup is kept as
   `gameinfo.gi.alyxmp_backup`)
+
+### Changes to NoVR
+
+Alyx MP uses a slightly modified NoVR. NoVR's own files stay as they are; the changes sit next to them and
+are undone on uninstall:
+
+- one line at the top of `game/hlvr/scripts/vscripts/useextra.lua`, NoVR's interaction script, that tells the
+  mod what you used
+- `game/alyxmp_hud/`: Half-Life 2's HUD layout, colours and fonts for NoVR's HUD (with Half-Life 2's own
+  number font if Half-Life 2 is installed), mounted ahead of NoVR (settings menu: *Half-Life 2 HUD*)
+- `game/alyxmp_autoreload/`: NoVR's gun scripts without the "never reload by yourself" flag, mounted ahead of
+  NoVR (settings menu: *Auto reload*)
 - Joined sessions save into `SAVE/amp_mp/`, separate from your own saves
 
 Uninstall by running `AlyxMP-Setup.exe` again and pressing **Uninstall**. Your saves are not touched.

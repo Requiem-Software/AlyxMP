@@ -17,7 +17,8 @@ def find_window(title_part="Half-Life: Alyx"):
         if n and user32.IsWindowVisible(hwnd):
             buf = ctypes.create_unicode_buffer(n + 1)
             user32.GetWindowTextW(hwnd, buf, n + 1)
-            if title_part in buf.value:
+            # exactly the game's title: browser tabs about the game contain it too
+            if buf.value == title_part or buf.value.startswith(title_part + " "):
                 found.append(hwnd)
         return True
 

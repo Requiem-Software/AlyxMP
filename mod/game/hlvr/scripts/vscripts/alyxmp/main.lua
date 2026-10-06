@@ -15,7 +15,7 @@
 
 AMP = AMP or {}
 local A = AMP
-A.VERSION = "0.4.0"
+A.VERSION = "0.5.0"
 A.PROTO = 3
 
 local MODEL_ALYX = "models/characters/alyx/alyx.vmdl"
@@ -52,16 +52,22 @@ local WALK_SPEED = 12       -- below this a player is idle (units/s)
 local RUN_SPEED = 135       -- above this the run cycle is used
 local AIM_HOLD = 1.2        -- keep the aiming pose this long after a shot
 -- natural speeds of the locomotion clips, so playback can follow the real movement speed
-local CLIP_SPEED = { sprint_alt_ = 250 }
+-- ground speed of the run cycle at normal playback (measured from the planted foot: ~150 u/s);
+-- playback follows the real speed so feet stay planted, from NoVR's 86 u/s walk up to sprinting
+local CLIP_SPEED = { sprint_alt_ = 150 }
+local RATE_MIN, RATE_MAX = 0.45, 1.8
+local RATE_STEP = 0.1        -- only re-send the playback rate when it changed this much...
+local RATE_HOLD = 0.4        -- ...or this long has passed, so jittery packets don't make it stutter
 local ZONE_PAD = 12         -- leeway around changelevel trigger volumes
-local ZONE_DRAW_DIST = 900
+local ZONE_SHOW = 90         -- a zone's outline and label fade in from about 2 m away...
+local ZONE_FULL = 30         -- ...and are fully there this close
 local MASK_PLAYERSOLID = 33636363
 local ATTACH_FOLLOW = PATTACH_POINT_FOLLOW or 5
 
 local IS_VR = not GlobalSys:CommandLineCheck("-novr")
-local SCREEN_W = GlobalSys:CommandLineInt("-w", 1280)
 local PROP_NAME = "amp_pp"  -- every prop the mod spawns; saves restore them, so they get cleaned up on load
 local HUD_NAME = "amp_hud"
+local TARGET_NAME = "amp_target"  -- the invisible npc_bullseye each avatar carries, so enemies go after it
 local USE_RANGE = 75        -- NoVR's E reaches about this far (it caps player_use_radius at 60)
 local PULL_RANGE = 650      -- gravity-glove pulls
 
@@ -94,6 +100,16 @@ local function killEnt(e) if e and IsValidEntity(e) then e:Kill() end end
 
 local function vecStr(v) return fmt(v.x) .. " " .. fmt(v.y) .. " " .. fmt(v.z) end
 
+-- NoVR keeps its flashlight in the global flashlight_ent; in VR it's the flashlight item in the hand
+local function localFlashlightOn()
+    if not IS_VR then
+        local e = rawget(_G, "flashlight_ent")
+        return e ~= nil and IsValidEntity(e)
+    end
+    local f = Entities:FindByClassname(nil, "item_hlvr_prop_flashlight")
+    return f ~= nil and f:GetMoveParent() ~= nil
+end
+
 local function localFeetAndView(p)
     local feet = p:GetOrigin()
     if IS_VR then
@@ -113,6 +129,10 @@ end
 -- (re)initialisation: this file runs again on every map load and every launcher attach
 
 local function destroyPuppetEnts(pp)
+    killEnt(pp.light)
+    pp.light, pp.lightOn = nil, nil
+    killEnt(pp.target)
+    pp.target = nil
     killEnt(pp.weaponEnt)
     killEnt(pp.alyx)
     killEnt(pp.alyxB)
@@ -129,6 +149,7 @@ for _, id in ipairs(A.listeners or {}) do StopListeningToGameEvent(id) end
 
 A.puppets = {}
 A.listeners = {}
+A.dimmed = nil
 A.cfg = A.cfg or {}
 A.zones = {}
 A.zoneArmed = {}
@@ -158,15 +179,32 @@ A.nextHud = 0
 A.map = GetMapName()
 
 local function mpActive() return A.cfg.mp == "1" end
+-- the launcher's settings menu switches these (amp_cfg <key> 0/1); all on unless switched off
+local function shown(key) return A.cfg[key] ~= "0" end
+
+-- stop drawing (and clear what's on screen) before a save or level loads; r_showdebugoverlays is a
+-- different thing (the render system's debug views) and stays off
+function A.HideOverlays()
+    A.unloading = true
+    SendToConsole("ent_clear_debug_overlays")
+    SendToConsole("cl_ent_clear_debug_overlays")
+end
 A.isVR = IS_VR
 
 DoIncludeScript("alyxmp/world.lua", nil)
 
 ---------------------------------------------------------------------------------------------------
--- HUD
+-- HUD: the engine's screen-text overlay, set in Half-Life: Alyx's own UI typeface (Raju, from its
+-- Panorama fonts) and kept as quiet as the game's own menus: white type, small caps labels, no boxes
 
 local FEED_LINES = 6
 local FEED_TIME = 12
+local FONT = "Raju"
+local CHAR_W = 0.37           -- Raju's average advance, in font sizes (for centring); bold runs wider
+local CHAR_W_BOLD = 0.39
+local WHITE = { 255, 255, 255 }
+local DIM = { 200, 204, 208 }
+local ACCENT = { 255, 199, 92 }
 
 -- the launcher tells us the game window's size (amp_cfg sw / sh); the overlay works in pixels
 local function screenSize()
@@ -179,69 +217,99 @@ local function px(n)
     return math.floor(n * h / 1080 + 0.5)
 end
 
-local function screenText(x, y, text, size, bold, r, g, b, dur)
-    DebugScreenTextPretty(math.floor(x), math.floor(y), 0, text, r, g, b, 255, dur, "", size, bold)
+local function screenText(x, y, text, size, bold, c, alpha, dur)
+    DebugScreenTextPretty(math.floor(x + 0.5), math.floor(y + 0.5), 0, text, c[1], c[2], c[3], alpha or 255, dur,
+        A.cfg.font or FONT, size, bold)
 end
 
-local function centerText(y, text, size, bold, r, g, b, dur)
+local function textWidth(text, size, bold)
+    return #text * size * (tonumber(A.cfg.charw or "") or (bold and CHAR_W_BOLD or CHAR_W))
+end
+
+local function centerText(y, text, size, bold, c, alpha, dur)
     local w = screenSize()
-    screenText(w / 2 - #text * size * (bold and 0.29 or 0.26), y, text, size, bold, r, g, b, dur)
+    screenText(w / 2 - textWidth(text, size, bold) / 2, y, text, size, bold, c, alpha, dur)
+end
+
+-- where a point in the world lands on the NoVR player's screen (nil when behind them)
+local function viewBasis(ang)
+    local pr, yr = math.rad(ang.x), math.rad(ang.y)
+    local cp, sp, cy, sy = math.cos(pr), math.sin(pr), math.cos(yr), math.sin(yr)
+    return Vector(cp * cy, cp * sy, -sp), Vector(sy, -cy, 0), Vector(sp * cy, sp * sy, cp)
+end
+
+local function toScreen(eye, fwd, right, up, world)
+    local d = world - eye
+    local z = d:Dot(fwd)
+    if z < 4 then return nil end
+    local w, h = screenSize()
+    -- like Source's fov_desired: the horizontal field of view of a 4:3 picture, wider screens see more
+    local tanV = math.tan(math.rad(Convars:GetFloat("fov_desired") or 90) / 2) * 0.75
+    local tanH = tanV * w / h
+    return w / 2 + d:Dot(right) / z / tanH * (w / 2), h / 2 - d:Dot(up) / z / tanV * (h / 2), z
 end
 
 --- A line in the chat feed on the left of the screen.
-function A.Feed(text)
-    table.insert(A.feed, { text = text, t = Time() })
+function A.Feed(text, note)
+    table.insert(A.feed, { text = text, t = Time(), note = note })
     while #A.feed > FEED_LINES do table.remove(A.feed, 1) end
 end
 
-function A.Note(text) A.Feed("* " .. text) end
+function A.Note(text) A.Feed(text, true) end
 
 local function drawFeed(now, dur)
     local keep = {}
     for _, f in ipairs(A.feed) do if now - f.t < FEED_TIME then table.insert(keep, f) end end
     A.feed = keep
-    local w, h = screenSize()
-    local size = px(21)
-    for i, f in ipairs(keep) do
-        screenText(w * 0.02, h * 0.5 + (i - 1) * size * 1.3, f.text, size, false, 255, 226, 160, dur)
+    if not shown("feed") then return end
+    local _, h = screenSize()
+    local size, step = px(22), px(28)
+    local y = h * 0.74 - #keep * step
+    for _, f in ipairs(keep) do
+        -- fade out over the last two seconds
+        local alpha = math.floor(255 * math.min(1, (FEED_TIME - (now - f.t)) / 2))
+        screenText(px(32), y, f.text, size, false, f.note and ACCENT or WHITE, alpha, dur)
+        y = y + step
+    end
+end
+
+local function drawRoster(p, dur)
+    local x, y = px(32), px(30)
+    local count = 1
+    for _ in pairs(A.puppets) do count = count + 1 end
+    screenText(x, y, "PLAYERS  " .. count, px(15), true, DIM, 210, dur)
+    screenText(x + px(110), y, "Y  CHAT      F10  SETTINGS      /HELP", px(15), false, DIM, 150, dur)
+    y = y + px(26)
+    for _, pp in pairs(A.puppets) do
+        screenText(x, y, displayName(pp.name), px(21), false, WHITE, 235, dur)
+        local info
+        if pp.map and pp.map ~= A.map then
+            info = pp.map
+        elseif pp.renderPos and p then
+            info = string.format("%d m", math.floor((pp.renderPos - p:GetOrigin()):Length() / 39.37 + 0.5))
+        end
+        if info then screenText(x + px(200), y + px(3), info, px(17), false, DIM, 190, dur) end
+        y = y + px(27)
     end
 end
 
 local function drawHud(now, p)
     local dur = 0.3
-    if mpActive() then
-        local count = 1
-        for _ in pairs(A.puppets) do count = count + 1 end
-        local size = px(19)
-        local x, y = px(24), px(56)
-        screenText(x, y, "ALYX MP  -  " .. count .. (count == 1 and " player" or " players") .. "    Y: chat   /help for commands", size, true, 255, 170, 40, dur)
-        for _, pp in pairs(A.puppets) do
-            y = y + size * 1.3
-            local txt = "  " .. displayName(pp.name)
-            if pp.map and pp.map ~= A.map then
-                txt = txt .. "  (" .. pp.map .. ")"
-            elseif pp.renderPos and p then
-                txt = txt .. string.format("  %dm", math.floor((pp.renderPos - p:GetOrigin()):Length() / 39.37 + 0.5))
-            end
-            screenText(x, y, txt, size, false, 230, 230, 230, dur)
-        end
-    end
+    if mpActive() and shown("list") then drawRoster(p, dur) end
     drawFeed(now, dur)
 
     if A.myZone and mpActive() then
         local st = A.zoneStatus
-        local title, sub
+        local title, sub = "LOADING ZONE", "Waiting for the other players"
         if A.transitioning then
-            title, sub = "LOADING ZONE", "Everyone is here - loading..."
+            title, sub = "LOADING", "Everyone is here"
         elseif st and st.id == A.myZone then
-            title = string.format("LOADING ZONE  %d/%d players ready", st.ready, st.total)
-            if st.waiting ~= "" then sub = "Waiting for: " .. displayName(st.waiting) end
-        else
-            title, sub = "LOADING ZONE", "Waiting for the other players"
+            sub = string.format("%d of %d ready", st.ready, st.total)
+            if st.waiting ~= "" then sub = sub .. "   \194\183   waiting for " .. displayName(st.waiting) end
         end
         local _, h = screenSize()
-        centerText(h * 0.16, title, px(28), true, 120, 255, 140, dur)
-        if sub then centerText(h * 0.16 + px(28) * 1.35, sub, px(21), false, 200, 255, 210, dur) end
+        centerText(h * 0.15, title, px(30), true, WHITE, 245, dur)
+        centerText(h * 0.15 + px(40), sub, px(21), false, DIM, 220, dur)
     end
 end
 
@@ -313,12 +381,16 @@ local function interactLabel(p)
 end
 
 local function updateHint(now, p)
-    if IS_VR or now < A.nextHint then return end
+    if IS_VR or now < A.nextHint or not shown("dot") then return end
     A.nextHint = now + 0.1
     A.hint = interactLabel(p)
     if A.hint then
-        local _, h = screenSize()
-        centerText(h * 0.5 + px(30), A.hint, px(22), true, 255, 170, 40, 0.12)
+        -- a dot in the middle of NoVR's crosshair, in the crosshair's colour; the glyph's centre sits
+        -- about a quarter of its size right of where it's drawn
+        local w, h = screenSize()
+        local size = px(14)
+        DebugScreenTextPretty(math.floor(w / 2 - size * 0.24 + 0.5), math.floor(h / 2 + 0.5), 0, "\226\151\143",
+            254, 207, 64, 255, 0.12, "", size, false)
     end
 end
 
@@ -441,6 +513,76 @@ local function fireEffects(pp, code)
     StartSoundEvent(w.snd, ent)
 end
 
+-- NoVR's own flashlight (flashlight.lua) is a light_spot; remote players get an identical one
+local FLASHLIGHT_KV = {
+    enabled = "0", color = "255 255 255 255", brightness = "1", range = "700", castshadows = "1",
+    shadowtexturewidth = "1024", shadowtextureheight = "1024", style = "0", fademindist = "0", fademaxdist = "6000",
+    bouncescale = "1.0", renderdiffuse = "1", renderspecular = "1", directlight = "2", indirectlight = "0",
+    attenuation1 = "0.0", attenuation2 = "1.0", innerconeangle = "10", outerconeangle = "32", lightcookie = "flashlight",
+}
+
+-- an invisible target at the avatar's chest: enemies in this game go after the other players too
+local function updateTarget(pp, pos, eyeh)
+    local at = pos + Vector(0, 0, math.max(eyeh, 30) * 0.7)
+    if not (pp.target and IsValidEntity(pp.target)) then
+        -- not solid, so shots and bodies pass through; it has to be damageable though, or no enemy
+        -- counts it as one (so it gets a lot of health instead)
+        pp.target = SpawnEntityFromTableSynchronous("npc_bullseye", {
+            targetname = TARGET_NAME, origin = vecStr(at), health = 999999, minangle = "360", spawnflags = 65536,
+        })
+        return
+    end
+    pp.target:SetAbsOrigin(at)
+end
+
+-- the player's name over their head: on the NoVR screen in the HUD's type, in VR in the world
+local function drawTag(pp, pos, eyeh, p)
+    if not shown("tags") then return end
+    local label = displayName(pp.name)
+    local head = pos + Vector(0, 0, math.max(eyeh, 30) + 14)
+    local dist = p and (pos - p:GetOrigin()):Length() / 39.37 or 0
+    if IS_VR or not p then
+        if dist > 15 then label = string.format("%s  [%dm]", label, math.floor(dist + 0.5)) end
+        DebugDrawText(head, label, false, 0)
+        return
+    end
+    local eye = p:EyePosition()
+    local fwd, right, up = viewBasis(p:EyeAngles())
+    local x, y = toScreen(eye, fwd, right, up, head)
+    if not x then return end
+    local size = px(20)
+    local alpha = dist > 25 and 170 or 235
+    screenText(x - textWidth(label, size) / 2, y - size, label, size, false, WHITE, alpha, 0)
+    if dist > 15 then
+        local d = string.format("%d m", math.floor(dist + 0.5))
+        screenText(x - textWidth(d, px(16)) / 2, y + px(4), d, px(16), false, DIM, alpha - 30, 0)
+    end
+end
+
+local function updateFlashlight(pp, pos, yaw, pitch, eyeh, on)
+    if on and not (pp.light and IsValidEntity(pp.light)) then
+        local kv = {}
+        for k, v in pairs(FLASHLIGHT_KV) do kv[k] = v end
+        kv.targetname = PROP_NAME
+        kv.origin = vecStr(pos + Vector(0, 0, eyeh))
+        pp.light = SpawnEntityFromTableSynchronous("light_spot", kv)
+        pp.lightOn = false
+    end
+    if not pp.light or not IsValidEntity(pp.light) then return end
+    if on ~= pp.lightOn then
+        pp.lightOn = on
+        DoEntFireByInstanceHandle(pp.light, on and "TurnOn" or "TurnOff", "", 0, nil, nil)
+        StartSoundEventFromPosition(on and "HL2Player.FlashLightOn" or "HL2Player.FlashLightOff", pos + Vector(0, 0, eyeh))
+    end
+    if on then
+        -- where NoVR puts it: a little right of and below the eyes, along the view
+        local y = math.rad(yaw)
+        local fwd, right = Vector(math.cos(y), math.sin(y), 0), Vector(math.sin(y), -math.cos(y), 0)
+        pp.light:SetAbsOrigin(pos + Vector(0, 0, eyeh - 1) + fwd * 1 + right * 3.5)
+        pp.light:SetAngles(pitch or 0, yaw, 0)
+    end
+end
+
 -- Cubic Hermite between two snapshots using their velocities, so paths curve smoothly through
 -- corners instead of zig-zagging between 20 Hz samples.
 local function hermite(a, b, f)
@@ -460,37 +602,42 @@ local function samplePuppet(pp, rt)
     local n = #snaps
     if rt <= snaps[1].st then
         local s = snaps[1]
-        return s.pos, s.yaw, s.eyeh, s.flags, s.weapon, false
+        return s.pos, s.yaw, s.eyeh, s.flags, s.weapon, false, s.pitch
     end
     if rt >= snaps[n].st then
         local s = snaps[n]
         local ex = math.min(rt - s.st, EXTRAP)
-        return s.pos + s.vel * ex, s.yaw, s.eyeh, s.flags, s.weapon, false
+        return s.pos + s.vel * ex, s.yaw, s.eyeh, s.flags, s.weapon, false, s.pitch
     end
     for i = n - 1, 1, -1 do
         local a, b = snaps[i], snaps[i + 1]
         if a.st <= rt then
             local f = (rt - a.st) / math.max(b.st - a.st, 0.001)
             if b.teleport then
-                return b.pos, b.yaw, b.eyeh, b.flags, b.weapon, true
+                return b.pos, b.yaw, b.eyeh, b.flags, b.weapon, true, b.pitch
             end
-            return hermite(a, b, f), lerpAngle(a.yaw, b.yaw, f), a.eyeh + (b.eyeh - a.eyeh) * f, b.flags, b.weapon, false
+            return hermite(a, b, f), lerpAngle(a.yaw, b.yaw, f), a.eyeh + (b.eyeh - a.eyeh) * f, b.flags, b.weapon, false,
+                (a.pitch or 0) + ((b.pitch or 0) - (a.pitch or 0)) * f
         end
     end
     local s = snaps[n]
-    return s.pos, s.yaw, s.eyeh, s.flags, s.weapon, false
+    return s.pos, s.yaw, s.eyeh, s.flags, s.weapon, false, s.pitch
 end
 
 local function setPlayback(pp, rig, seq)
     local rate = 1
     for prefix, clip in pairs(CLIP_SPEED) do
         if seq:sub(1, #prefix) == prefix then
-            rate = math.max(0.55, math.min(1.6, pp.speed / clip))
+            rate = math.max(RATE_MIN, math.min(RATE_MAX, pp.gait / clip))
             break
         end
     end
-    if pp.rate and math.abs(rate - pp.rate) < 0.07 and pp.rateSeq == seq then return end
-    pp.rate, pp.rateSeq = rate, seq
+    local now = Time()
+    if pp.rate and pp.rateSeq == seq and (math.abs(rate - pp.rate) < RATE_STEP or now - (pp.rateAt or 0) < RATE_HOLD)
+        and math.abs(rate - pp.rate) < 0.3 then
+        return
+    end
+    pp.rate, pp.rateSeq, pp.rateAt = rate, seq, now
     DoEntFireByInstanceHandle(rig, "SetPlaybackRate", string.format("%.2f", rate), 0, nil, nil)
 end
 
@@ -503,7 +650,7 @@ local function updatePuppet(pp, now, dt)
     end
 
     local rt = now - pp.off - (pp.interp or INTERP_MIN)
-    local pos, yaw, eyeh, flags, weapon, jumped = samplePuppet(pp, rt)
+    local pos, yaw, eyeh, flags, weapon, jumped, pitch = samplePuppet(pp, rt)
     while #snaps > 3 and snaps[2].st < rt - 0.5 do table.remove(snaps, 1) end
 
     if bit(flags, 4) then  -- dead: they're about to reload, don't leave a statue behind
@@ -536,6 +683,7 @@ local function updatePuppet(pp, now, dt)
     end
     pos, yaw = pp.renderPos, pp.renderYaw
     pp.speed = pp.vel:Length()
+    pp.gait = (pp.gait or pp.speed) + (pp.speed - (pp.gait or pp.speed)) * math.min(dt * 4, 1)
 
     ensureWeapon(pp, weapon or 0)
     local aiming = (now - pp.lastShot) < AIM_HOLD
@@ -548,14 +696,9 @@ local function updatePuppet(pp, now, dt)
         pp.rate = nil
     end
     setPlayback(pp, pp.rig, seq)
-
-    local label = displayName(pp.name)
-    local p = Entities:GetLocalPlayer()
-    if p then
-        local dist = (pos - p:GetOrigin()):Length() / 39.37
-        if dist > 15 then label = string.format("%s  [%dm]", label, math.floor(dist + 0.5)) end
-    end
-    DebugDrawText(pos + Vector(0, 0, math.max(eyeh, 30) + 14), label, false, 0)
+    updateFlashlight(pp, pos, yaw, pitch, eyeh, bit(flags, 8))
+    updateTarget(pp, pos, eyeh)
+    drawTag(pp, pos, eyeh, Entities:GetLocalPlayer())
 end
 
 local function addSnapshot(id, map, st, pos, yaw, pitch, eyeh, flags, weapon)
@@ -624,18 +767,33 @@ local function scanZones()
         local o = t:GetOrigin()
         local mins, maxs = o + t:GetBoundingMins(), o + t:GetBoundingMaxs()
         local c = t:GetCenter()
-        table.insert(zones, { ent = t, id = zoneId(c), mins = mins, maxs = maxs, center = c })
+        -- the floor under it (the volume often reaches below the ground)
+        local down = { startpos = c, endpos = Vector(c.x, c.y, mins.z - 64), mask = MASK_PLAYERSOLID }
+        TraceLine(down)
+        local floor = down.hit and math.max(down.pos.z, mins.z) or mins.z
+        table.insert(zones, { ent = t, id = zoneId(c), mins = mins, maxs = maxs, center = c, floor = floor })
     end
     A.zones = zones
 end
 
-local function drawBoxOutline(mn, mx, r, g, b, dur)
-    local c = {
-        Vector(mn.x, mn.y, mn.z), Vector(mx.x, mn.y, mn.z), Vector(mx.x, mx.y, mn.z), Vector(mn.x, mx.y, mn.z),
-        Vector(mn.x, mn.y, mx.z), Vector(mx.x, mn.y, mx.z), Vector(mx.x, mx.y, mx.z), Vector(mn.x, mx.y, mx.z),
-    }
-    local edges = { { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 1 }, { 5, 6 }, { 6, 7 }, { 7, 8 }, { 8, 5 }, { 1, 5 }, { 2, 6 }, { 3, 7 }, { 4, 8 } }
-    for _, e in ipairs(edges) do DebugDrawLine(c[e[1]], c[e[2]], r, g, b, false, dur) end
+local function drawFloorOutline(z, mn, mx, r, g, b, dur)
+    z = z + 2
+    local c = { Vector(mn.x, mn.y, z), Vector(mx.x, mn.y, z), Vector(mx.x, mx.y, z), Vector(mn.x, mx.y, z) }
+    for i = 1, 4 do DebugDrawLine(c[i], c[i % 4 + 1], r, g, b, true, dur) end   -- hidden behind walls and floors
+end
+
+-- is the spot in plain view (not behind a wall or under the floor)?
+local function canSee(p, eye, at)
+    local tr = { startpos = eye, endpos = at, ignore = p, mask = MASK_PLAYERSOLID }
+    TraceLine(tr)
+    return not tr.hit or tr.fraction > 0.97
+end
+
+-- how far a point is from a zone's volume (0 inside it)
+local function zoneDistance(z, pt)
+    local c = Vector(math.max(z.mins.x, math.min(z.maxs.x, pt.x)), math.max(z.mins.y, math.min(z.maxs.y, pt.y)),
+        math.max(z.mins.z, math.min(z.maxs.z, pt.z)))
+    return (c - pt):Length()
 end
 
 local function insideZone(z, pt)
@@ -696,17 +854,35 @@ local function updateZones(now, p)
         A.Emit("z", mine or "-")
     end
 
-    if not mpActive() then return end
+    if not mpActive() or not shown("zones") then return end
+    local eye, fwd, right, up
+    if not IS_VR then
+        eye = p:EyePosition()
+        fwd, right, up = viewBasis(p:EyeAngles())
+    end
     for _, z in ipairs(A.zones) do
-        if A.zoneArmed[z.id] and (z.center - feet):Length() < ZONE_DRAW_DIST then
-            local inside = z.id == A.myZone
-            local r, g, b = 255, 170, 0
-            if inside then r, g, b = 60, 255, 110 end
-            drawBoxOutline(z.mins, z.maxs, r, g, b, 0.15)
+        local inside = z.id == A.myZone
+        -- only once you're close (or in it): nobody needs to see an exit from across the level
+        local d = inside and 0 or zoneDistance(z, feet)
+        if A.zoneArmed[z.id] and d < ZONE_SHOW then
+            local f = math.max(0, math.min(1, (ZONE_SHOW - d) / (ZONE_SHOW - ZONE_FULL)))
+            -- the zone's footprint on the floor, white; green once you're standing in it (lines have no
+            -- alpha, so fading in means brightening)
+            local r, g, b = 235, 235, 235
+            if inside then r, g, b = 110, 235, 150 end
+            drawFloorOutline(z.floor, z.mins, z.maxs, math.floor(r * f), math.floor(g * f), math.floor(b * f), 0.15)
             local st = A.zoneStatus
             local label = "LOADING ZONE"
-            if st and st.id == z.id then label = string.format("LOADING ZONE  %d/%d", st.ready, st.total) end
-            DebugDrawText(z.center + Vector(0, 0, 24), label, false, 0.12)
+            if st and st.id == z.id then label = string.format("LOADING ZONE   %d/%d", st.ready, st.total) end
+            local at = Vector(z.center.x, z.center.y, z.floor + 64)
+            if IS_VR then
+                if f > 0.5 then DebugDrawText(at, label, true, 0.12) end
+            elseif not inside and canSee(p, eye, at) then
+                local x, y = toScreen(eye, fwd, right, up, at)
+                if x then
+                    screenText(x - textWidth(label, px(18), true) / 2, y, label, px(18), true, WHITE, math.floor(220 * f), 0.12)
+                end
+            end
         end
     end
 end
@@ -799,6 +975,9 @@ local function watchViewModelShots(now)
     local cyc = vm:GetCycle() or 0
     local firing = seq:find("fire") or seq:find("shoot") or seq:find("attack")
     if firing and (seq ~= A.vmSeq or cyc + 0.05 < (A.vmCycle or 0)) then localShot() end
+    -- auto reload (settings menu): when the gun reloads by itself, come out of aim-down-sights the way
+    -- NoVR's reload key does
+    if A.cfg.autoreload == "1" and seq ~= A.vmSeq and seq:find("reload") then SendToConsole("novr_resetads") end
     A.vmSeq, A.vmCycle = seq, cyc
 end
 
@@ -812,6 +991,7 @@ local function sendLocalState(now, p)
     if IS_VR then flags = flags + 1 end
     if eyeh < (IS_VR and 42 or 48) then flags = flags + 2 end
     if p:GetHealth() <= 0 then flags = flags + 4 end
+    if localFlashlightOn() then flags = flags + 8 end
     local weapon = currentWeapon(now)
 
     local last = A.lastSent
@@ -980,16 +1160,38 @@ reg("amp_chat", function(name, ...)
     A.Feed(displayName(name) .. ": " .. table.concat({ ... }, " "))
 end)
 
--- after a level change the launcher pauses whoever finished loading first until everyone is in; the
--- notice is drawn before the pause and stays up while the game is frozen
+-- dim the world the way the game does when it pauses (a screen fade that stays until faded back)
+local function dimWorld(on)
+    local p = Entities:GetLocalPlayer()
+    if IS_VR or not p or on == A.dimmed then return end
+    A.dimmed = on
+    local f = SpawnEntityFromTableSynchronous("env_fade", {
+        targetname = HUD_NAME, duration = on and "0" or "0.35", holdtime = "0",
+        rendercolor = "0 0 0 150",            -- the fade's alpha goes in the colour
+        spawnflags = on and "8" or "1",       -- stay faded out / fade back in from it
+    })
+    DoEntFireByInstanceHandle(f, "Fade", "", 0, p, p)
+    DoEntFireByInstanceHandle(f, "Kill", "", 1, nil, nil)
+end
+
+-- after a level change the launcher freezes whoever finished loading first until everyone is in. The
+-- card is drawn before the freeze and stays up while the game stands still (the launcher redraws it
+-- every few seconds and when the list of who we're waiting for changes)
 reg("amp_hold", function(on, ...)
     A.hold = on == "1"
-    if A.hold then
-        local _, h = screenSize()
-        centerText(h * 0.42, "WAITING FOR EVERYONE TO FINISH LOADING", px(26), true, 255, 170, 40, 0.6)
-        local who = table.concat({ ... }, " ")
-        if who ~= "" then centerText(h * 0.42 + px(36), displayName(who), px(20), false, 230, 230, 230, 0.6) end
-    end
+    dimWorld(A.hold)
+    if not A.hold then return end
+    local _, h = screenSize()
+    local y = h * 0.4
+    centerText(y, "P A U S E D", px(42), true, WHITE, 250, 0.6)
+    local who = table.concat({ ... }, " ")
+    local sub = who ~= "" and ("Waiting for " .. displayName(who) .. " to finish loading") or "Waiting for everyone to finish loading"
+    centerText(y + px(58), sub, px(22), false, DIM, 230, 0.6)
+end)
+
+-- the launcher is about to load a save or a level
+reg("amp_unload", function()
+    A.HideOverlays()
 end)
 
 reg("amp_near", function(x, y, z, yaw)
@@ -1018,10 +1220,14 @@ listen("entity_killed", function(info)
 end)
 
 listen("player_hurt", function(info)
-    if info.health and info.health <= 0 then A.Emit("died") end
+    if info.health and info.health <= 0 then
+        A.HideOverlays()  -- a save gets loaded next
+        A.Emit("died")
+    end
 end)
 
 listen("change_level_activated", function()
+    A.HideOverlays()
     A.transitioning = true
     A.levelChangeStarted = true
     A.Emit("chl")
@@ -1061,6 +1267,7 @@ local function tick()
         sendLocalState(now, p)
         updateZones(now, p)
     end
+    if A.unloading then return 0 end
     for _, pp in pairs(A.puppets) do updatePuppet(pp, now, dt) end
     if now >= A.nextHud then
         drawHud(now, p)
@@ -1087,7 +1294,7 @@ end
 local function startNow()
     -- puppets that were in a save are just frozen props now; right after a restore their handles can't
     -- be called into yet, so remove them through the input queue
-    for _, name in ipairs({ PROP_NAME, HUD_NAME }) do
+    for _, name in ipairs({ PROP_NAME, HUD_NAME, TARGET_NAME }) do
         for _, e in ipairs(Entities:FindAllByName(name)) do
             DoEntFireByInstanceHandle(e, "Kill", "", 0, nil, nil)
         end
@@ -1100,6 +1307,7 @@ local function startNow()
     if A.World then A.World.Start() end
     SpawnEntityFromTableAsynchronous("logic_script", { targetname = "alyxmp_precache", vscripts = "alyxmp/precache.lua" }, function()
         A.ready = true
+        A.unloading = false
         A.Emit("ready", A.map)
     end, nil)
 end
