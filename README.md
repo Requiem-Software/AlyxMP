@@ -21,18 +21,20 @@ needs to open TCP port 27420 on their router, or you can all use a VPN like Tail
 
 ## In the game
 
-- **Y** to chat.
-- The crosshair tells you what you can pick up or use.
+- **Y** to chat, **F10** for settings.
+- A dot in your crosshair means you can use what you're looking at.
 - You see each other as Alyx, with your names above your heads.
 - Doors, puzzles, items, enemies and story moments are shared, so you're always in the same world.
 - To move on to the next level, everyone has to stand in the loading zone at the exit.
 - If you die, you come back next to the host. If something looks out of sync, click **Resync my world**.
+- The game saves every 5 minutes and after every level change.
 
 ## Good to know
 
 - Every player's game runs its own enemies, kept in step with the host's, so a fight can look a little
   different for each of you.
-- Alyx MP adds one line to NoVR's interaction script. Uninstalling removes it.
+- Alyx MP adds a few small things to NoVR: a Half-Life 2 style HUD, auto reload and one line in its
+  interaction script. Uninstalling removes them.
 - To uninstall, run `AlyxMP-Setup.exe` again and click **Uninstall**. Your saves stay where they are.
 
 ## Build it yourself

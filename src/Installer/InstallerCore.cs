@@ -81,6 +81,7 @@ namespace AlyxMP
             {
                 ModFiles.EnsureNoVRSearchPaths(hla);
                 ModFiles.EnsureNoVRUseHook(hla);
+                ModFiles.EnsureHud(hla);
             }
 
             Step(modStart + (1 - modStart) * 0.8, "Creating shortcuts...");
@@ -209,6 +210,8 @@ namespace AlyxMP
             DeleteDir(ModFiles.ScriptsDir(hla));
             ModFiles.RemoveHook(hla);
             ModFiles.RemoveNoVRUseHook(hla);
+            ModFiles.RemoveHud(hla);
+            ModFiles.RemoveAutoReload(hla);
             DeleteDir(ModFiles.LauncherDir(hla));
             foreach (var dir in new[] { StartMenuDir(), Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory) })
             {

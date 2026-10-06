@@ -87,15 +87,18 @@ namespace AlyxMP
         readonly List<KeyValuePair<int, string>> journal = new List<KeyValuePair<int, string>>();
         string journalMap;
         const int JournalMax = 1500;
-        static readonly HashSet<string> JournalKinds = new HashSet<string> { "tg", "io", "us", "pg", "bk", "kd", "pr" };
+        static readonly HashSet<string> JournalKinds = new HashSet<string> { "tg", "io", "us", "pg", "bk", "kd", "pr", "ai" };
 
         // level changes: whoever finishes loading first waits (paused) for the others
         bool levelChange;
         string levelFrom;
         bool holding;
         DateTime holdSince;
+        string holdWaiting = "";
         readonly Dictionary<int, string> arrived = new Dictionary<int, string>();   // host: who's loaded where
         const int HoldTimeout = 75;
+        DateTime nextAutosave;
+        const int AutosaveMinutes = 5;
 
         // client
         Connection server;
@@ -252,6 +255,12 @@ namespace AlyxMP
             IsHost = false;
             MyId = 0;
             saving = syncing = placeAfterLoad = false;
+            if (holding)
+            {
+                holding = false;
+                Freeze(false);
+                game.Send("amp_hold 0");
+            }
             zoneStatus = "-";
             zoneGoSent = null;
             game.Send("amp_cfg mp 0");
@@ -288,9 +297,23 @@ namespace AlyxMP
             if (game.Send($"amp_cfg sw {size.Width}") && game.Send($"amp_cfg sh {size.Height}")) sentSize = size;
         }
 
+        /// <summary>The launcher's settings; the in-game switches are sent to the mod from here.</summary>
+        public Settings Prefs { get; set; }
+
+        /// <summary>Send the settings menu's in-game switches (any thread).</summary>
+        public void ApplyPrefs() => Post(SendPrefs);
+
+        void SendPrefs()
+        {
+            var prefs = Prefs;
+            if (prefs == null) return;
+            foreach (var kv in prefs.GameConfig()) game.Send($"amp_cfg {kv.Key} {kv.Value}");
+        }
+
         void ApplyMpConfig()
         {
             SendScreenSize(true);
+            SendPrefs();
             // VR: HLA waits on "press trigger to start" after loads; joining and respawning load, so skip it
             if (game.IsVR) game.Send("hlvr_auto_dismiss_loading 1");
             // in a shared game nobody's world may stop: opening the console (NoVR binds it to C) mustn't pause
@@ -565,9 +588,9 @@ namespace AlyxMP
             }
             var sp = payload.IndexOf(' ');
             if (sp <= 0 || !JournalKinds.Contains(payload.Substring(0, sp))) return;
-            if (payload.StartsWith("pr "))
+            if (payload.StartsWith("pr ") || payload.StartsWith("ai "))
             {
-                // only where each object came to rest matters
+                // only where each object came to rest (how far each wheel / lever got) matters
                 var end = payload.IndexOf(' ', 3);
                 if (end > 0)
                 {
@@ -812,6 +835,7 @@ namespace AlyxMP
             }
             Log?.Invoke($"Loading the host's world ({data.Length / 1024} KB)...");
             game.Send($"save_set_subdirectory {ClientSaveDir}");
+            game.Send("amp_unload");
             game.Send($"load {SyncSave}");
             placeAfterLoad = true;
             syncStartedAt = now;
@@ -841,6 +865,7 @@ namespace AlyxMP
             pendingMap = map;
             pendingJournal = entries;
             Log?.Invoke($"Loading {map} and catching up on {entries.Count} things the others did...");
+            game.Send("amp_unload");
             game.Send($"map {map}");
             placeAfterLoad = true;
             syncStartedAt = now;
@@ -920,9 +945,9 @@ namespace AlyxMP
         {
             holding = true;
             holdSince = DateTime.UtcNow;
-            var waiting = string.Join(" ", players.Values.Where(p => !p.IsLocal).Select(p => p.Name));
-            game.Send($"amp_hold 1 {waiting}");
-            game.Send("setpause");
+            holdWaiting = string.Join(" ", players.Values.Where(p => !p.IsLocal).Select(p => p.Name));
+            game.Send($"amp_hold 1 {holdWaiting}");
+            Freeze(true);
             if (IsHost)
             {
                 arrived[MyId] = map;
@@ -946,9 +971,20 @@ namespace AlyxMP
         {
             if (!holding) return;
             holding = false;
-            game.Send("unpause");
+            Freeze(false);
             game.Send("amp_hold 0");
             Note(why);
+            // everyone made it into the new level: that's a checkpoint
+            if (IsHost) Autosave();
+        }
+
+        /// <summary>The host's world is the one everybody comes back to; HL:A's own rotating autosave keeps it.</summary>
+        void Autosave()
+        {
+            nextAutosave = DateTime.UtcNow.AddMinutes(AutosaveMinutes);
+            if (!IsHost || !game.InLevel || holding) return;
+            game.Send("autosave");
+            Log?.Invoke("Autosaved.");
         }
 
         void OnMapReady(string map)
@@ -1169,6 +1205,7 @@ namespace AlyxMP
             var msg = $"{who} restarted everyone from the last checkpoint";
             Note(msg);
             Broadcast(Msg.Notice, msg);
+            game.Send("amp_unload");
             game.Send("load autosave");
         }
 
@@ -1189,11 +1226,23 @@ namespace AlyxMP
 
         // ------------------------------------------------------------------ periodic work
 
+        /// <summary>
+        /// Stop the world while we wait. NoVR (cheats are on there) stops time, which leaves the screen to
+        /// the mod's own pause card; the engine's pause would add its plain "PAUSED" caption.
+        /// </summary>
+        void Freeze(bool on)
+        {
+            if (game.IsVR) game.Send(on ? "setpause" : "unpause");
+            else game.Send(on ? "host_timescale 0" : "host_timescale 1");
+        }
+
         void Tick()
         {
             if (!Active) return;
             var now = DateTime.UtcNow;
             ticks++;
+            // the card is drawn while the game stands still; keep it up
+            if (holding && ticks % 5 == 0) game.Send($"amp_hold 1 {holdWaiting}");
             if (IsHost) HostTick(now);
             else ClientTick(now);
             Publish();
@@ -1203,6 +1252,9 @@ namespace AlyxMP
         {
             foreach (var kv in unnamed.ToList())
                 if ((now - kv.Value).TotalSeconds > 10) kv.Key.Close();
+
+            if (nextAutosave == default) nextAutosave = now.AddMinutes(AutosaveMinutes);
+            else if (now >= nextAutosave && game.InLevel && !holding && !saving) Autosave();
 
             if (saving && (now - saveStartedAt).TotalSeconds > 20)
             {

@@ -42,6 +42,7 @@ namespace AlyxMP
 
         readonly StartupAction startup;
         readonly ChatOverlay chatOverlay;
+        readonly SettingsOverlay settingsOverlay;
         int mappedPort;
         string shareAddress;
         bool suppressAutoLaunch;
@@ -52,7 +53,8 @@ namespace AlyxMP
             this.hla = hla;
             this.settings = settings;
             this.game = game;
-            session = new Session(game, hla);
+            session = new Session(game, hla) { Prefs = settings };
+            HlaUi.Init(hla);
 
             Text = "Alyx Multiplayer";
             Theme.Apply(this);
@@ -73,6 +75,7 @@ namespace AlyxMP
             refresh.Tick += (s, e) => RefreshState();
             refresh.Start();
             chatOverlay = new ChatOverlay(text => session.SendChat(text), () => session.Active);
+            settingsOverlay = new SettingsOverlay(settings, ModFiles.NoVRInstalled(hla), OnSettingChanged);
 
             AddLog($"Alyx MP {ModFiles.Version} - Half-Life: Alyx at {hla}", Theme.Muted);
             if (!ModFiles.ModInstalled(hla))
@@ -85,6 +88,25 @@ namespace AlyxMP
             }
             RefreshState();
             Shown += (s, e) => RunStartupAction();
+        }
+
+        /// <summary>A switch in the in-game settings menu (F10) was flipped.</summary>
+        void OnSettingChanged(string what)
+        {
+            session.ApplyPrefs();
+            try
+            {
+                // these change game files, which the game reads when it starts
+                if (ModFiles.NoVRInstalled(hla))
+                {
+                    ModFiles.SetAutoReload(hla, settings.AutoReload);
+                    ModFiles.SetHud(hla, settings.Hl2Hud);
+                }
+            }
+            catch (Exception e)
+            {
+                AddLog("Couldn't change the game files: " + e.Message, Theme.Bad);
+            }
         }
 
         void RunStartupAction()
@@ -378,6 +400,8 @@ namespace AlyxMP
                 {
                     ModFiles.EnsureNoVRSearchPaths(hla);
                     ModFiles.EnsureNoVRUseHook(hla);
+                    ModFiles.SetHud(hla, settings.Hl2Hud);
+                    ModFiles.SetAutoReload(hla, settings.AutoReload);
                 }
             }
             catch (Exception e)
@@ -483,6 +507,7 @@ namespace AlyxMP
             LeaveSession();
             session.Dispose();
             chatOverlay.Dispose();
+            settingsOverlay.Dispose();
             base.OnFormClosing(e);
         }
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace AlyxMP
@@ -12,7 +13,7 @@ namespace AlyxMP
     /// </summary>
     static class ModFiles
     {
-        public const string Version = "0.4.0";
+        public const string Version = "0.5.0";
         public const string HookLine = "script_reload_code alyxmp/main";
         public const string NoVRHookLine = "script_reload_code novr";
         public const string NoVRZipUrl = "https://github.com/HLANoVR/HLA-NoVR/archive/refs/heads/main.zip";
@@ -74,6 +75,125 @@ namespace AlyxMP
                 return m.Success ? m.Groups[1].Value.Trim() : "?";
             }
             catch (Exception) { return "?"; }
+        }
+
+        // ---------------------------------------------------------------- our own search paths
+        // Folders of loose files mounted ahead of every other path in gameinfo.gi, so their copies win
+        // over NoVR's and the game's.
+
+        static Regex SearchPathLine(string folder) =>
+            new Regex(@"^[ \t]*Game[ \t]+" + Regex.Escape(folder) + @"[ \t]*\r?$", RegexOptions.Multiline);
+
+        static void MountFirst(string hla, string folder)
+        {
+            var gi = GameInfo(hla);
+            var text = File.ReadAllText(gi);
+            if (SearchPathLine(folder).IsMatch(text)) return;
+            var m = Regex.Match(text, @"^([ \t]*)Game([ \t]+)\S+[ \t]*\r?$", RegexOptions.Multiline);
+            if (!m.Success) throw new InvalidDataException("Couldn't find the SearchPaths block in gameinfo.gi");
+            var nl = text.Contains("\r\n") ? "\r\n" : "\n";
+            var backup = gi + ".alyxmp_backup";
+            if (!File.Exists(backup)) File.Copy(gi, backup);
+            File.WriteAllText(gi, text.Insert(m.Index, $"{m.Groups[1].Value}Game{m.Groups[2].Value}{folder}{nl}"));
+        }
+
+        static void Unmount(string hla, string folder)
+        {
+            var gi = GameInfo(hla);
+            if (!File.Exists(gi)) return;
+            var text = File.ReadAllText(gi);
+            var cleaned = Regex.Replace(text, @"^[ \t]*Game[ \t]+" + Regex.Escape(folder) + @"[ \t]*\r?\n", "", RegexOptions.Multiline);
+            if (cleaned != text) File.WriteAllText(gi, cleaned);
+        }
+
+        // ---------------------------------------------------------------- HL2-style HUD for NoVR
+        // game/alyxmp_hud holds NoVR's HUD files with Half-Life 2's exact layout, colours and fonts.
+
+        public static string HudDir(string hla) => Path.Combine(hla, "game", "alyxmp_hud");
+        const string HudFolder = "alyxmp_hud";
+
+        public static void EnsureHud(string hla) => SetHud(hla, true);
+
+        /// <summary>Mount (or unmount) the Half-Life 2 HUD; the game reads it when it starts.</summary>
+        public static void SetHud(string hla, bool on)
+        {
+            if (!on || !Directory.Exists(HudDir(hla)))
+            {
+                Unmount(hla, HudFolder);
+                return;
+            }
+            MountFirst(hla, HudFolder);
+            UseHl2Font(hla);
+        }
+
+        public static void RemoveHud(string hla)
+        {
+            Unmount(hla, HudFolder);
+            try { if (Directory.Exists(HudDir(hla))) Directory.Delete(HudDir(hla), true); } catch (Exception) { }
+        }
+
+        // ---------------------------------------------------------------- auto reload for NoVR
+        // NoVR's guns never reload on their own: its weapon scripts set item_flags 6, i.e. no auto-reload
+        // (2) and no auto-switch when empty (4). With auto reload on, copies without the no-auto-reload
+        // flag are mounted ahead of NoVR. Weapon scripts are read when the game starts.
+
+        public static string AutoReloadDir(string hla) => Path.Combine(hla, "game", "alyxmp_autoreload");
+        const string AutoReloadFolder = "alyxmp_autoreload";
+        static readonly string[] Guns = { "weapon_pistol", "weapon_shotgun", "weapon_smg1", "weapon_ar2" };
+
+        public static void SetAutoReload(string hla, bool on)
+        {
+            if (!on || !NoVRInstalled(hla))
+            {
+                Unmount(hla, AutoReloadFolder);
+                return;
+            }
+            var novr = new Vpk(Path.Combine(hla, "game", "novr", "pak01_dir.vpk"));
+            var files = new Dictionary<string, byte[]>();
+            foreach (var gun in Guns)
+            {
+                var data = novr.Read($"scripts/{gun}.txt");
+                if (data == null) continue;
+                var text = Encoding.UTF8.GetString(data).TrimStart('﻿');
+                text = Regex.Replace(text, @"(""item_flags""\s+"")(\d+)("")",
+                    m => m.Groups[1].Value + (int.Parse(m.Groups[2].Value) & ~2) + m.Groups[3].Value);
+                files[$"scripts/{gun}.txt"] = Encoding.UTF8.GetBytes(text);
+            }
+            // the game takes a file from a VPK over a loose one, wherever it's mounted: NoVR's packed
+            // scripts would win over loose copies, so ours go in a VPK too
+            var dir = AutoReloadDir(hla);
+            Directory.CreateDirectory(dir);
+            try { if (Directory.Exists(Path.Combine(dir, "scripts"))) Directory.Delete(Path.Combine(dir, "scripts"), true); } catch (Exception) { }
+            Vpk.Write(Path.Combine(dir, "pak01_dir.vpk"), files);
+            MountFirst(hla, AutoReloadFolder);
+        }
+
+        public static void RemoveAutoReload(string hla)
+        {
+            Unmount(hla, AutoReloadFolder);
+            try { if (Directory.Exists(AutoReloadDir(hla))) Directory.Delete(AutoReloadDir(hla), true); } catch (Exception) { }
+        }
+
+        /// <summary>
+        /// HL2's HUD digits come from its HALFLIFE2.ttf; NoVR maps that font name to HL:A's own font, whose
+        /// digits are hearts. If Half-Life 2 is installed, use its font file from there.
+        /// </summary>
+        static void UseHl2Font(string hla)
+        {
+            var scheme = Path.Combine(HudDir(hla), "resource", "clientscheme.res");
+            if (!File.Exists(scheme)) return;
+            string font = null;
+            foreach (var lib in GamePaths.LibraryFolders())
+            {
+                var f = Path.Combine(lib, "steamapps", "common", "Half-Life 2", "hl2", "resource", "halflife2.ttf");
+                if (File.Exists(f)) { font = f; break; }
+            }
+            if (font == null) return;
+            var copy = Path.Combine(HudDir(hla), "resource", "hl2_halflife2.ttf");
+            try { File.Copy(font, copy, true); } catch (IOException) { return; }
+            var text = File.ReadAllText(scheme);
+            var patched = text.Replace("\"resource/HALFLIFE2.vfont\"", "\"resource/hl2_halflife2.ttf\"");
+            if (patched != text) File.WriteAllText(scheme, patched);
         }
 
         static string UseExtra(string hla) => Path.Combine(GamePaths.Hlvr(hla), "scripts", "vscripts", "useextra.lua");
