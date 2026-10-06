@@ -27,7 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\..\mod\game\**\*.lua;..\..\mod\game\**\*.res;..\..\mod\game\**\*.txt;..\..\mod\game\**\*.ttf" LogicalName="payload/game/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\mod\game\**\*.lua;..\..\mod\game\**\*.res;..\..\mod\game\**\*.txt;..\..\mod\game\**\*.ttf;..\..\mod\game\**\*.vmdl_c;..\..\mod\game\**\*.vanmgrph_c" LogicalName="payload/game/%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="$(LauncherExe)" LogicalName="payload/launcher/AlyxMP.exe" />
   </ItemGroup>
 

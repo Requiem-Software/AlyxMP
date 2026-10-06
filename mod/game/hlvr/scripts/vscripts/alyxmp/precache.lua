@@ -1,7 +1,7 @@
 -- Spawned as a logic_script so the engine runs Precache() before we spawn avatars.
 function Precache(context)
     PrecacheModel("models/characters/alyx/alyx.vmdl", context)
-    PrecacheModel("models/characters/combine_grunt/combine_grunt.vmdl", context)
+    PrecacheModel("models/alyxmp/avatar.vmdl", context)
     PrecacheModel("models/weapons/vr_alyxgun/vr_alyxgun.vmdl", context)
     PrecacheModel("models/weapons/vr_shotgun/vr_flip_shotgun_body.vmdl", context)
     PrecacheModel("models/weapons/vr_ipistol/vr_ipistol.vmdl", context)

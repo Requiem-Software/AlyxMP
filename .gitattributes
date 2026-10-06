@@ -3,3 +3,5 @@
 *.ico binary
 *.png binary
 *.ttf binary
+*.vmdl_c binary
+*.vanmgrph_c binary
