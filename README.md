@@ -1,7 +1,13 @@
+<p align="center">
+  <img src="docs/showcase.gif" alt="Two players walking through City 17 together in Half-Life: Alyx" width="100%">
+</p>
+
 # Alyx Multiplayer
 
 Play Half-Life: Alyx with your friends. One of you hosts, the others join, and you play through the story
 together. Works with a VR headset, or with mouse and keyboard thanks to [HLA NoVR](https://github.com/HLANoVR/HLA-NoVR).
+
+**[Download the latest version](https://github.com/Requiem-Software/AlyxMP/releases/latest)** (Windows, free)
 
 ## Install
 
