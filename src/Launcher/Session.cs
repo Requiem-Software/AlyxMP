@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -28,6 +29,10 @@ namespace AlyxMP
         public bool WantsMapSync;        // host side: a VR player waiting for the level + journal
         public bool IsVR;                // host side: as their last sync request / state said
         public string RosterMap;         // client side: what the host last told us
+        // host side: how much of each message a guest may send (see Session.Limits), and what got dropped
+        public readonly Dictionary<Msg, Bucket> Limits = new Dictionary<Msg, Bucket>();
+        public int Dropped;
+        public DateTime DroppedSince;
 
         public string Map => Last?.Map ?? RosterMap;
         public bool InLevel(DateTime now) =>
@@ -52,7 +57,7 @@ namespace AlyxMP
     /// </summary>
     sealed class Session : IDisposable
     {
-        public const int Proto = 3;
+        public const int Proto = 4;
         public const int DefaultPort = 27420;
         public const int MaxPlayers = 8;
         const string SyncSave = "amp_sync";
@@ -77,6 +82,26 @@ namespace AlyxMP
         TcpListener listener;
         int nextId = 2;
         string password = "";
+        string joinCode = "";
+        readonly Dictionary<Connection, string> nonces = new Dictionary<Connection, string>();
+        const int MaxPending = 8;          // connections that haven't finished joining, in all...
+        const int MaxPendingPerIp = 3;     // ...and from one address
+        const int JoinSeconds = 6;         // to answer the challenge
+        // what a guest may send, per second (and in a burst); a guest that keeps going over is dropped
+        static readonly Dictionary<Msg, double[]> Limits = new Dictionary<Msg, double[]>
+        {
+            { Msg.State, new double[] { 40, 80 } }, { Msg.Shot, new double[] { 25, 40 } },
+            { Msg.World, new double[] { 120, 400 } }, { Msg.Chat, new double[] { 2, 6 } },
+            { Msg.Kill, new double[] { 10, 20 } }, { Msg.Zone, new double[] { 5, 10 } },
+            { Msg.SyncRequest, new double[] { 0.1, 2 } }, { Msg.Arrived, new double[] { 1, 4 } },
+            { Msg.Pong, new double[] { 4, 8 } }, { Msg.SaveRequest, new double[] { 0.1, 1 } },
+        };
+        // how far from where a guest stands what it reports may happen (world message kind -> units)
+        static readonly Dictionary<string, double> WorldRange = new Dictionary<string, double>
+        {
+            { "p", 2500 }, { "pr", 2500 }, { "pg", 3000 }, { "bk", 3000 }, { "us", 3000 }, { "ai", 3000 },
+            { "io", 6000 }, { "kd", 6000 }, { "nd", 6000 }, { "sh", 8000 },
+        };
         string zoneStatus = "-";
         string zoneGoSent;
         bool saving;
@@ -102,6 +127,8 @@ namespace AlyxMP
 
         // client
         Connection server;
+        string joinPassword, joinCodeGiven;
+        DateTime connectedAt;
         string pendingMap;
         List<KeyValuePair<int, string>> pendingJournal;
         bool syncing;
@@ -110,6 +137,8 @@ namespace AlyxMP
         bool placeAfterLoad;
         DateTime quietUntil;             // level change / save load in progress
         DateTime welcomedAt;
+        bool joinSynced;                 // loaded the host's world since joining
+        DateTime lastAutoSync = DateTime.MinValue;
 
         public bool IsHost { get; private set; }
         public bool Active { get; private set; }
@@ -135,6 +164,7 @@ namespace AlyxMP
             game.SaveWritten += path => Post(() => OnSaveWritten(path));
             game.SaveLoaded += map => Post(OnLocalSaveLoaded);
             game.World += payload => Post(() => OnLocalWorld(payload));
+            game.Desync += why => Post(() => OnDesync(why));
             worldFlush = new Timer(_ => Post(FlushWorld), null, 15, 15);
         }
 
@@ -158,19 +188,22 @@ namespace AlyxMP
 
         // ------------------------------------------------------------------ public API (any thread)
 
-        public void Host(string name, int port, string pw) => Post(() => DoHost(name, port, pw));
+        public void Host(string name, int port, string pw, string code) => Post(() => DoHost(name, port, pw, code));
         public void Join(string name, string address, string pw) => Post(() => DoJoin(name, address, pw));
         public void Stop() => Post(DoStop);
         public void SendChat(string text) => Post(() => DoChat(text));
         public void Resync() => Post(DoResync);
+        /// <summary>Save from the in-game menu: the host saves; a guest asks the host to.</summary>
+        public void SaveGame() => Post(DoSaveGame);
 
         // ------------------------------------------------------------------ session start/stop
 
-        void DoHost(string name, int port, string pw)
+        void DoHost(string name, int port, string pw, string code)
         {
             DoStop();
             myName = Clean.Name(name);
             password = pw ?? "";
+            joinCode = (code ?? "").Trim().ToUpperInvariant();
             try
             {
                 listener = new TcpListener(IPAddress.Any, port);
@@ -208,11 +241,18 @@ namespace AlyxMP
         {
             DoStop();
             myName = Clean.Name(name);
-            if (!TryParseAddress(address, out var host, out var port))
+            if (!TryParseAddress(address, out var host, out var port, out var code))
             {
-                Log?.Invoke("Enter the host's address, like 81.2.3.4:27420");
+                Log?.Invoke("Enter the host's address, like 81.2.3.4:27420#K7QW2P");
                 return;
             }
+            if (code.Length == 0)
+            {
+                Log?.Invoke("That address has no join code. Paste the host's full address - it ends in #CODE.");
+                return;
+            }
+            joinCodeGiven = code;
+            joinPassword = pw ?? "";
             Status = $"Connecting to {host}:{port}...";
             Log?.Invoke(Status);
             Publish();
@@ -236,7 +276,7 @@ namespace AlyxMP
                     });
                     return;
                 }
-                Post(() => OnConnected(c, pw));
+                Post(() => OnConnected(c));
             });
         }
 
@@ -248,6 +288,7 @@ namespace AlyxMP
             foreach (var p in players.Values) p.Conn?.Close();
             foreach (var c in unnamed.Keys.ToList()) c.Close();
             unnamed.Clear();
+            nonces.Clear();
             server?.Close();
             server = null;
             players.Clear();
@@ -264,16 +305,25 @@ namespace AlyxMP
             zoneStatus = "-";
             zoneGoSent = null;
             game.Send("amp_cfg mp 0");
+            game.Send("amp_cfg role -");
+            game.Send("amp_cfg id 0");
             game.Send("amp_clear");
             Status = "Not in a session";
             Publish();
         }
 
-        static bool TryParseAddress(string s, out string host, out int port)
+        static bool TryParseAddress(string s, out string host, out int port, out string code)
         {
             host = null;
             port = DefaultPort;
+            code = "";
             s = (s ?? "").Trim();
+            int hash = s.IndexOf('#');
+            if (hash >= 0)
+            {
+                code = s.Substring(hash + 1).Trim().ToUpperInvariant();
+                s = s.Substring(0, hash).Trim();
+            }
             if (s.Length == 0) return false;
             int colon = s.LastIndexOf(':');
             if (colon > 0 && s.IndexOf(':') == colon)
@@ -318,6 +368,9 @@ namespace AlyxMP
             if (game.IsVR) game.Send("hlvr_auto_dismiss_loading 1");
             // in a shared game nobody's world may stop: opening the console (NoVR binds it to C) mustn't pause
             game.Send("sv_pause_on_console_open 0");
+            // the player list shows your own name too, in a session or not
+            var me = Clean.Name(Prefs?.Name ?? "");
+            if (me != null) game.Send("amp_cfg me " + me.Replace(' ', '_'));
             if (!Active)
             {
                 game.Send("amp_cfg mp 0");
@@ -346,11 +399,54 @@ namespace AlyxMP
                 c.Close();
                 return;
             }
+            // a flood of connections that never join is turned away before it costs anything
+            var ip = (c.Client.RemoteEndPoint as IPEndPoint)?.Address?.ToString() ?? "?";
+            if (unnamed.Count >= MaxPending || unnamed.Keys.Count(u => u.Remote.StartsWith(ip + ":")) >= MaxPendingPerIp)
+            {
+                c.Close();
+                return;
+            }
             var conn = new Connection(c);
             conn.Received += (cn, t, b) => Post(() => OnHostReceive(cn, t, b));
             conn.Closed += cn => Post(() => OnHostClosed(cn));
             unnamed[conn] = DateTime.UtcNow;
             conn.Start();
+            var nonce = JoinProof.NewNonce();
+            nonces[conn] = nonce;
+            conn.Send(Msg.Challenge, nonce);
+        }
+
+        /// <summary>
+        /// Whether a guest may send this now. Over the limit it's dropped; a guest that keeps flooding is
+        /// disconnected (the session thread is everyone's, it mustn't drown in one player's messages).
+        /// </summary>
+        bool Allowed(Player p, Msg type)
+        {
+            if (!Limits.TryGetValue(type, out var lim)) return true;
+            if (!p.Limits.TryGetValue(type, out var b)) p.Limits[type] = b = new Bucket(lim[0], lim[1]);
+            if (b.Take()) return true;
+            var now = DateTime.UtcNow;
+            if ((now - p.DroppedSince).TotalSeconds > 10)
+            {
+                p.DroppedSince = now;
+                p.Dropped = 0;
+            }
+            if (++p.Dropped == 400)
+            {
+                Log?.Invoke($"{p.Name} was sending far too much ({type}) - disconnected.");
+                Reject(p.Conn, "Disconnected: too many messages.");
+            }
+            return false;
+        }
+
+        /// <summary>A guest's report of something that happened at `where` has to be near where they are.</summary>
+        bool Plausible(Player p, string kind, double[] where)
+        {
+            var st = p.Last;
+            if (st == null || st.Map != game.Map) return false;          // not in the host's level
+            if (where == null || !WorldRange.TryGetValue(kind, out var range)) return true;
+            double dx = where[0] - st.X, dy = where[1] - st.Y, dz = where[2] - st.Z;
+            return dx * dx + dy * dy + dz * dz <= range * range;
         }
 
         void Reject(Connection conn, string why)
@@ -371,15 +467,20 @@ namespace AlyxMP
                     return;
                 }
                 unnamed.Remove(conn);
+                nonces.TryGetValue(conn, out var nonce);
+                nonces.Remove(conn);
                 var f = Text(body).Split('\t');
                 if (f.Length < 4 || f[0] != Proto.ToString())
                 {
-                    Reject(conn, $"Version mismatch - the host is running Alyx MP {ModFiles.Version}. Update to the same version.");
+                    Reject(conn, $"Version mismatch - the host is running Alyx MP {ModFiles.Label}. Update to the same version.");
                     return;
                 }
-                if (password.Length > 0 && f[3] != password)
+                if (nonce == null || !JoinProof.Same(f[3], JoinProof.Proof(joinCode, password, nonce, Proto)))
                 {
-                    Reject(conn, "Wrong password.");
+                    Log?.Invoke($"Someone at {conn.Remote} tried to join with the wrong code or password.");
+                    Reject(conn, password.Length > 0
+                        ? "Wrong join code or password. Paste the host's full address (it ends in #CODE) and their password."
+                        : "Wrong join code. Paste the host's full address - it ends in #CODE.");
                     return;
                 }
                 if (players.Count >= MaxPlayers)
@@ -407,6 +508,7 @@ namespace AlyxMP
             }
 
             var now = DateTime.UtcNow;
+            if (!Allowed(p, type)) return;
             switch (type)
             {
                 case Msg.State:
@@ -438,10 +540,8 @@ namespace AlyxMP
                     if (!game.InLevel) conn.Send(Msg.Notice, "The host isn't in a level yet - you'll be brought in as soon as they are.");
                     break;
                 case Msg.Kill:
-                    var k = Clean.Kill(Text(body));
-                    if (k == null) return;
-                    game.Send("amp_k " + k);
-                    Broadcast(Msg.Kill, $"{p.Id}\t{k}", p);
+                    // (the old kill message: kills go through world "kd" now, and this one named entities
+                    // by index, which a guest could point at anything)
                     break;
                 case Msg.Arrived:
                     var am = Clean.Map(Text(body));
@@ -461,11 +561,15 @@ namespace AlyxMP
                     Broadcast(Msg.Chat, $"{p.Id}\t{text}", p);
                     break;
                 case Msg.World:
-                    var wp = Clean.World(Text(body));
-                    if (wp == null) return;
+                    // only what a player can cause, well-formed, and near where they are
+                    var wp = Clean.GuestWorld(Text(body), out var where);
+                    if (wp == null || !Plausible(p, wp.Substring(0, wp.IndexOf(' ') < 0 ? wp.Length : wp.IndexOf(' ')), where)) return;
                     Broadcast(Msg.World, $"{p.Id}\t{wp}", p);
                     QueueWorld(p.Id, wp);
                     RecordJournal(p.Id, wp);
+                    break;
+                case Msg.SaveRequest:
+                    HostSave($"{p.Name.Replace('_', ' ')} saved the game");
                     break;
                 case Msg.Pong:
                     if (long.TryParse(Text(body), out var sent))
@@ -477,6 +581,7 @@ namespace AlyxMP
         void OnHostClosed(Connection conn)
         {
             unnamed.Remove(conn);
+            nonces.Remove(conn);
             if (!(conn.Tag is Player p) || !players.ContainsKey(p.Id)) return;
             players.Remove(p.Id);
             arrived.Remove(p.Id);
@@ -664,17 +769,18 @@ namespace AlyxMP
 
         // ------------------------------------------------------------------ client: connection
 
-        void OnConnected(TcpClient c, string pw)
+        void OnConnected(TcpClient c)
         {
-            var conn = new Connection(c);
+            // only the host sends save files, so only this link takes them
+            var conn = new Connection(c) { AcceptFiles = true };
             server = conn;
             IsHost = false;
             Active = true;
+            connectedAt = DateTime.UtcNow;
             conn.Received += (cn, t, b) => Post(() => { if (cn == server) OnClientReceive(t, b); });
             conn.Closed += cn => Post(() => { if (cn == server) OnServerLost(); });
             conn.Start();
-            var novr = ModFiles.NoVRInstalled(hla) ? ModFiles.NoVRVersion(hla) : "-";
-            conn.Send(Msg.Hello, string.Join("\t", Proto, ModFiles.Version, myName, pw ?? "", GamePaths.BuildId(hla), novr));
+            // Hello goes out once the host's challenge arrives (it proves we have the code and password)
             Status = "Connected, waiting for the host...";
             Publish();
         }
@@ -697,10 +803,18 @@ namespace AlyxMP
             if (f != null && f.Length > 1) int.TryParse(f[0], out id);
             switch (type)
             {
+                case Msg.Challenge:
+                    if (MyId != 0 || text.Length != 32) return;
+                    var novr = ModFiles.NoVRInstalled(hla) ? ModFiles.NoVRVersion(hla) : "-";
+                    server?.Send(Msg.Hello, string.Join("\t", Proto, ModFiles.Version, myName,
+                        JoinProof.Proof(joinCodeGiven, joinPassword, text, Proto), GamePaths.BuildId(hla), novr));
+                    break;
                 case Msg.Welcome:
-                    MyId = int.Parse(text);
+                    if (MyId != 0 || !int.TryParse(text, out var myId) || myId < 2) return;
+                    MyId = myId;
                     players[MyId] = new Player { Id = MyId, Name = myName, IsLocal = true };
                     welcomedAt = now;
+                    joinSynced = false;
                     Status = "Connected";
                     Log?.Invoke("Joined the game.");
                     ApplyMpConfig();
@@ -767,14 +881,21 @@ namespace AlyxMP
                     game.Send($"amp_go {z}");
                     break;
                 case Msg.SyncData:
+                    // only the save we asked for, and only a real one
+                    if (!syncing) return;
+                    if (body.Length < 64 * 1024 || body[0] != 'S' || body[1] != '2' || body[2] != 'S' || body[3] != 'V')
+                    {
+                        Log?.Invoke("The host sent something that isn't a save file - ignored it.");
+                        syncing = false;
+                        return;
+                    }
                     OnSyncData(body);
                     break;
                 case Msg.SyncMap:
+                    if (!syncing) return;
                     OnSyncMap(text);
                     break;
                 case Msg.Kill:
-                    var k = f.Length > 1 ? Clean.Kill(f[1]) : null;
-                    if (k != null) game.Send("amp_k " + k);
                     break;
                 case Msg.Chat:
                     if (id == 0 || f.Length < 2 || !players.TryGetValue(id, out var cp)) return;
@@ -786,7 +907,11 @@ namespace AlyxMP
                     break;
                 case Msg.World:
                     var wp = f.Length > 1 ? Clean.World(f[1]) : null;
-                    if (id != 0 && id != MyId && wp != null) QueueWorld(id, wp);
+                    // enemy updates are the host's alone (player 1); and it's all about the host's level, so
+                    // nothing of it applies to ours while we're on another one
+                    if (id != 0 && id != MyId && wp != null && (id == 1 || !Clean.HostOnlyWorld(wp))
+                        && HostPlayer?.Last != null && HostPlayer.Last.Map == game.Map)
+                        QueueWorld(id, wp);
                     break;
                 case Msg.Notice:
                     Note(Clean.Chat(text));
@@ -1129,6 +1254,12 @@ namespace AlyxMP
             switch (verb)
             {
                 case "/checkpoint":
+                    // restarting everyone is the host's call
+                    if (!from.IsLocal)
+                    {
+                        Reply(from, "Only the host can restart everyone from the checkpoint.");
+                        return;
+                    }
                     DoCheckpoint(from.Name);
                     break;
                 case "/tp":
@@ -1167,6 +1298,12 @@ namespace AlyxMP
             }
             var who = FindPlayer(asking, whoName);
             var to = FindPlayer(asking, toName);
+            // guests can only move themselves; moving others is the host's
+            if (!asking.IsLocal && who != null && who != asking)
+            {
+                Reply(asking, "You can only teleport yourself: /tp <player>.");
+                return;
+            }
             var names = string.Join(", ", players.Values.Select(p => p.Name.Replace('_', ' ')));
             if (who == null || to == null)
             {
@@ -1207,6 +1344,46 @@ namespace AlyxMP
             Broadcast(Msg.Notice, msg);
             game.Send("amp_unload");
             game.Send("load autosave");
+        }
+
+        /// <summary>
+        /// The mod found our world drifted from the host's: the host keeps listing enemies we have nothing
+        /// for. Load the host's world again (by ourselves at most every few minutes).
+        /// </summary>
+        void OnDesync(string why)
+        {
+            var now = DateTime.UtcNow;
+            if (!Active || IsHost || MyId == 0 || syncing || holding || now < quietUntil) return;
+            if ((now - lastAutoSync).TotalMinutes < 3) return;
+            var host = HostPlayer;
+            if (host == null || !host.InLevel(now) || host.Last.Map != game.Map) return;
+            lastAutoSync = now;
+            Log?.Invoke("Your world drifted from the host's - loading theirs again.");
+            RequestSync("drift");
+        }
+
+        void DoSaveGame()
+        {
+            if (!Active)
+            {
+                game.Send("save_manual");
+                return;
+            }
+            if (IsHost) HostSave("Game saved");
+            else
+            {
+                server?.Send(Msg.SaveRequest, "-");
+                Note("Asked the host to save the game");
+            }
+        }
+
+        /// <summary>The host saves its world (NoVR's manual save slot), and everyone hears about it.</summary>
+        void HostSave(string message)
+        {
+            if (!IsHost || !game.InLevel || holding) return;
+            game.Send("save_manual");
+            Note(message);
+            Broadcast(Msg.Notice, message);
         }
 
         void DoResync()
@@ -1251,7 +1428,7 @@ namespace AlyxMP
         void HostTick(DateTime now)
         {
             foreach (var kv in unnamed.ToList())
-                if ((now - kv.Value).TotalSeconds > 10) kv.Key.Close();
+                if ((now - kv.Value).TotalSeconds > JoinSeconds) kv.Key.Close();
 
             if (nextAutosave == default) nextAutosave = now.AddMinutes(AutosaveMinutes);
             else if (now >= nextAutosave && game.InLevel && !holding && !saving) Autosave();
@@ -1287,7 +1464,15 @@ namespace AlyxMP
 
         void ClientTick(DateTime now)
         {
-            if (MyId == 0) return;
+            if (MyId == 0)
+            {
+                if (server != null && (now - connectedAt).TotalSeconds > 12)
+                {
+                    Log?.Invoke("The host didn't let us in - it may be running another version of Alyx MP.");
+                    DoStop();
+                }
+                return;
+            }
             if (holding && (now - holdSince).TotalSeconds > HoldTimeout) ReleaseHold("Stopped waiting for the others to load.");
             if (syncing && (now - syncStartedAt).TotalSeconds > 90)
             {
@@ -1301,9 +1486,11 @@ namespace AlyxMP
                 mismatchSince = null;
                 return;
             }
-            // main menu: join the host's world straight away
-            if (game.Map == null || game.Map == "startup")
+            // main menu: join the host's world straight away. Already in a level (even the host's): that's our
+            // own world, not the host's - load theirs once
+            if (game.Map == null || game.Map == "startup" || !joinSynced)
             {
+                joinSynced = true;
                 RequestSync("join");
                 return;
             }

@@ -9,13 +9,14 @@
 -- female citizen's idle and walk, the metrocop's run and crouch walk, and with a gun out the combine
 -- soldier's whole set - and driven by its animation graph (see the remote players section). Weapons are
 -- the same models NoVR shows in first person, in her right hand the way Alyx holds them in VR.
--- HL:Alyx doesn't render point_worldtext: name tags use the debug overlay, and the chat feed,
+-- HL:Alyx doesn't render point_worldtext: name tags are world panels in VR and the debug overlay on a
+-- screen, and the chat feed,
 -- loading-zone banner and interact hint use game_text (the game's own HUD message font).
 
 AMP = AMP or {}
 local A = AMP
-A.VERSION = "0.6.0"
-A.PROTO = 3
+A.VERSION = "0.6.1"
+A.PROTO = 4
 
 local MODEL_ALYX = "models/characters/alyx/alyx.vmdl"
 local RIG_MODEL = "models/alyxmp/avatar.vmdl"
@@ -53,6 +54,7 @@ local CROUCH_CLIPS = { { 92.6, 0 }, { 83.5, -59.4 }, { -0.4, -71.8 }, { -58.7, -
     { 0.9, 87 }, { 57.5, 51.6 } }
 local RUN_FROM, WALK_FROM = 120, 110   -- sprinting (NoVR: 140 u/s, walking 92) - with some hysteresis
 local ZONE_PAD = 12         -- leeway around changelevel trigger volumes
+local ZONE_ARM = 64         -- a zone counts once you've been this far from it since the map loaded
 local ZONE_SHOW = 90         -- a zone's outline and label fade in from about 2 m away...
 local ZONE_FULL = 30         -- ...and are fully there this close
 local MASK_PLAYERSOLID = 33636363
@@ -119,12 +121,64 @@ local function localFeetAndView(p)
     return feet, ang.y, ang.x, eye.z - feet.z
 end
 
+-- In VR your head is as high as it really is. Everyone else sees VR players at NoVR's standing eye height
+-- instead, with their own crouches and jumps on top, so all players look the same height. A VR player's
+-- standing height is learnt from how high they hold their head: the lowest point of the last moment (so
+-- a jump doesn't count), and of those the top few, which leaves out the time spent crouching. Holding the
+-- head higher than that corrects it at once; it only comes down after minutes lower (sat down for good).
+local STAND_EYE = 64        -- NoVR's standing eye height
+local STAND_HOLD = 0.7      -- a head height counts once it's been held this long (s): longer than a jump
+local STAND_MEMORY = 60     -- half-life of what's been seen (s)
+local STAND_SHARE = 0.1     -- the standing height: the top this share of the held heights
+
+local function vrEyeHeight(h, now)
+    local c = A.stand
+    if not c or now < c.last then
+        -- (a level load restarts the clock; what we know about the player stays)
+        c = { samples = {}, bins = c and c.bins or {}, total = c and c.total or 0, height = c and c.height, last = now }
+        A.stand = c
+    end
+    local s = c.samples
+    if #s == 0 or now - s[#s].t >= 0.05 then s[#s + 1] = { t = now, h = h } end
+    while #s > 1 and s[1].t < now - STAND_HOLD do table.remove(s, 1) end
+    if now - c.last >= 0.2 and now - s[1].t >= STAND_HOLD - 0.1 then
+        local held = h
+        for i = 1, #s do held = math.min(held, s[i].h) end
+        local bin = math.max(0, math.min(120, math.floor(held + 0.5)))
+        if c.height and bin > c.height + 2 then
+            -- held higher than we thought they stand: they do stand that high
+            c.total = 0
+            for k, w in pairs(c.bins) do
+                if k < bin then c.bins[k] = nil else c.total = c.total + w end
+            end
+        end
+        local keep = 0.5 ^ ((now - c.last) / STAND_MEMORY)
+        for k, w in pairs(c.bins) do c.bins[k] = w * keep end
+        c.bins[bin] = (c.bins[bin] or 0) + 1
+        c.total = c.total * keep + 1
+        local need, sum = c.total * STAND_SHARE, 0
+        for k = 120, 0, -1 do
+            sum = sum + (c.bins[k] or 0)
+            if sum >= need then
+                c.height = k
+                break
+            end
+        end
+        c.last = now
+    end
+    if not c.height then return STAND_EYE end  -- (until there's a first height: take them for standing)
+    return math.min(math.max(STAND_EYE + h - c.height, 0), STAND_EYE + 36)
+end
+
 ---------------------------------------------------------------------------------------------------
 -- (re)initialisation: this file runs again on every map load and every launcher attach
 
 local function destroyPuppetEnts(pp)
     killEnt(pp.light)
     pp.light, pp.lightOn = nil, nil
+    killEnt(pp.tag)
+    killEnt(pp.tagAnchor)
+    pp.tag, pp.tagAnchor, pp.tagMsg, pp.tagScale, pp.tagHidden, pp.tagCheck = nil, nil, nil, nil, nil, nil
     killEnt(pp.target)
     pp.target = nil
     killEnt(pp.weaponEnt)
@@ -147,6 +201,9 @@ A.dimmed = nil
 A.cfg = A.cfg or {}
 A.zones = {}
 A.zoneArmed = {}
+-- level-change triggers the map has switched on since it loaded (zones.lua "after"), by zone key
+if not (A.zoneOn and A.zoneOn.map == GetMapName()) then A.zoneOn = { map = GetMapName() } end
+A.zoneHooked = {}
 A.zoneStatus = nil
 A.myZone = nil
 A.feed = {}
@@ -186,6 +243,7 @@ end
 A.isVR = IS_VR
 
 DoIncludeScript("alyxmp/world.lua", nil)
+DoIncludeScript("alyxmp/zones.lua", nil)
 
 ---------------------------------------------------------------------------------------------------
 -- HUD: the engine's screen-text overlay, set in Half-Life: Alyx's own UI typeface (Raju, from its
@@ -272,8 +330,15 @@ local function drawRoster(p, dur)
     local count = 1
     for _ in pairs(A.puppets) do count = count + 1 end
     screenText(x, y, "PLAYERS  " .. count, px(15), true, DIM, 210, dur)
-    screenText(x + px(110), y, "Y  CHAT      ESC  SETTINGS      /HELP", px(15), false, DIM, 150, dur)
+    -- (alone there's no chat; IS_VR has neither)
+    local keys = mpActive() and "Y  CHAT      ESC  SETTINGS      /HELP" or "ESC  SETTINGS"
+    if not IS_VR then screenText(x + px(110), y, keys, px(15), false, DIM, 150, dur) end
     y = y + px(26)
+    -- you, then the others
+    if A.cfg.me then
+        screenText(x, y, displayName(A.cfg.me), px(21), false, ACCENT, 235, dur)
+        y = y + px(27)
+    end
     for _, pp in pairs(A.puppets) do
         screenText(x, y, displayName(pp.name), px(21), false, WHITE, 235, dur)
         local info
@@ -289,7 +354,7 @@ end
 
 local function drawHud(now, p)
     local dur = 0.3
-    if mpActive() and shown("list") then drawRoster(p, dur) end
+    if shown("list") then drawRoster(p, dur) end
     drawFeed(now, dur)
 
     if A.myZone and mpActive() then
@@ -541,8 +606,15 @@ local function setGait(pp, clips, px, py, prate, dx, dy, speed)
     setParam(pp, prate, math.min(speed / s, 3))
 end
 
+-- How far down she is goes by the player's eye height (VR players' is matched to NoVR's, see vrEyeHeight):
+-- a VR player's half crouch is half of hers. A VR player's head over standing height (a real jump) lifts her.
+local CROUCH_FROM = 60      -- she starts to crouch below this eye height...
+local CROUCH_FULL = 44      -- ...and is all the way down at this one (NoVR's crouch goes lower still)
+local JUMP_FROM = 66        -- the eye height above which she leaves the ground
+local JUMP_MAX = 30
+
 -- Movement: every gait plays in the direction she moves (relative to where she faces), as fast as she moves.
-local function updateMovement(pp, dt, yaw, crouched)
+local function updateMovement(pp, dt, yaw, crouch)
     local y = math.rad(yaw)
     local cy, sy = math.cos(y), math.sin(y)
     local fwd = pp.vel.x * cy + pp.vel.y * sy
@@ -561,7 +633,7 @@ local function updateMovement(pp, dt, yaw, crouched)
     local moving = math.min(speed / 40, 1)
     setParam(pp, "p_move", moving)
     setParam(pp, "p_cmove", moving)
-    pp.crouchW = approach(pp.crouchW, crouched and 1 or 0, dt / 0.25)
+    pp.crouchW = approach(pp.crouchW, crouch, dt / 0.25)
     setParam(pp, "p_crouch", pp.crouchW)
 end
 
@@ -616,15 +688,83 @@ local function updateTarget(pp, pos, eyeh, p)
     pp.target:SetAbsOrigin(at)
 end
 
+-- In VR the name is a panel in the world (screen text never reaches the headset): our own Panorama layout
+-- (panorama/layout/alyxmp_nametag, built by tools/nametag/build.py). It turns to face you, grows with
+-- distance so it stays readable, and draws through walls - dimmer while one is in the way.
+-- A world panel doesn't follow being moved itself, only its parent: it hangs off an anchor we move, turn
+-- (around the vertical, the panel is stood up at spawn) and scale.
+local TAG_LAYOUT = "file://{resources}/layout/alyxmp_nametag.xml"
+local TAG_NEAR = 100        -- at this distance the tag has its own size; it scales with distance to keep its
+local TAG_MIN = 0.55        -- apparent size (down to this much, for someone right next to you)
+local TAG_LIFT = 3          -- the tag's middle this far over the head (at its own size)
+local TAG_WALL_CHECK = 0.2  -- how often we look for a wall between us and the tag
+
+local function tagText(name, dist)
+    local label = (name:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
+    if dist <= 15 then return label end
+    return string.format("%s<br><span class='Dist'>%d m</span>", label, math.floor(dist + 0.5))
+end
+
+local function worldTag(pp, head, dist, p)
+    local eye = p:EyePosition()
+    local msg = tagText(displayName(pp.name), dist)
+    if not (pp.tag and IsValidEntity(pp.tag) and pp.tagAnchor and IsValidEntity(pp.tagAnchor)) then
+        killEnt(pp.tag)
+        killEnt(pp.tagAnchor)
+        local d = head - eye
+        pp.tagYaw = math.deg(atan2(d.y, d.x))
+        pp.tagAnchor = SpawnEntityFromTableSynchronous("info_target", { targetname = PROP_NAME, origin = vecStr(head) })
+        -- (world panels lie flat; the roll stands it up, facing us)
+        pp.tag = SpawnEntityFromTableSynchronous("point_clientui_world_text_panel", {
+            targetname = PROP_NAME, message = msg, dialog_layout_name = TAG_LAYOUT, width = "40", height = "12",
+            panel_dpi = "32", horizontal_align = "1", vertical_align = "1", ignore_depth = "1", lit = "0",
+            ignore_input = "1", exclude_from_save_games = "1", origin = vecStr(head),
+            angles = string.format("0 %.1f 90", pp.tagYaw - 90),
+        })
+        if not (pp.tag and pp.tagAnchor) then return end
+        pp.tag:SetParent(pp.tagAnchor, "")
+        pp.tagMsg, pp.tagScale, pp.tagHidden = msg, 1, false
+    elseif msg ~= pp.tagMsg then
+        pp.tagMsg = msg
+        DoEntFireByInstanceHandle(pp.tag, "SetMessage", msg, 0, nil, nil)
+    end
+    local scale = math.max(TAG_MIN, (head - eye):Length() / TAG_NEAR)
+    if math.abs(scale - pp.tagScale) > 0.02 * scale then
+        pp.tagScale = scale
+        pp.tagAnchor:SetAbsScale(scale)
+    end
+    local at = head + Vector(0, 0, TAG_LIFT * pp.tagScale)
+    local d = at - eye
+    pp.tagAnchor:SetAbsOrigin(at)
+    pp.tagAnchor:SetAngles(0, math.deg(atan2(d.y, d.x)) - pp.tagYaw, 0)
+    local now = Time()
+    if now >= (pp.tagCheck or 0) then
+        pp.tagCheck = now + TAG_WALL_CHECK
+        local tr = { startpos = eye, endpos = at, ignore = p }
+        TraceLine(tr)
+        local hidden = tr.hit == true and tr.fraction < 0.98
+        if hidden ~= pp.tagHidden then
+            pp.tagHidden = hidden
+            DoEntFireByInstanceHandle(pp.tag, hidden and "AddCSSClass" or "RemoveCSSClass", "Occluded", 0, nil, nil)
+        end
+    end
+end
+
 -- the player's name over their head: on the NoVR screen in the HUD's type, in VR in the world
 local function drawTag(pp, pos, eyeh, p)
-    if not shown("tags") then return end
+    if not shown("tags") or not p then
+        if pp.tag or pp.tagAnchor then
+            killEnt(pp.tag)
+            killEnt(pp.tagAnchor)
+            pp.tag, pp.tagAnchor = nil, nil
+        end
+        return
+    end
     local label = displayName(pp.name)
     local head = pos + Vector(0, 0, math.max(eyeh, 30) + 14)
-    local dist = p and (pos - p:GetOrigin()):Length() / 39.37 or 0
-    if IS_VR or not p then
-        if dist > 15 then label = string.format("%s  [%dm]", label, math.floor(dist + 0.5)) end
-        DebugDrawText(head, label, false, 0)
+    local dist = (pos - p:GetOrigin()):Length() / 39.37
+    if IS_VR or A.cfg.worldtags == "1" then
+        worldTag(pp, head, dist, p)
         return
     end
     local eye = p:EyePosition()
@@ -715,6 +855,7 @@ local function updatePuppet(pp, now, dt)
 
     local rt = now - pp.off - (pp.interp or INTERP_MIN)
     local pos, yaw, eyeh, flags, weapon, jumped, pitch = samplePuppet(pp, rt)
+    eyeh = math.min(math.max(eyeh or STAND_EYE, 0), STAND_EYE + 36)
     while #snaps > 3 and snaps[2].st < rt - 0.5 do table.remove(snaps, 1) end
 
     if bit(flags, 4) then  -- dead: they're about to reload, don't leave a statue behind
@@ -748,8 +889,9 @@ local function updatePuppet(pp, now, dt)
     pos, yaw = pp.renderPos, pp.renderYaw
     pp.speed = pp.vel:Length()
 
-    placeRig(pp, pos, yaw)
-    updateMovement(pp, dt, yaw, bit(flags, 2))
+    local lift = math.min(math.max(eyeh - JUMP_FROM, 0), JUMP_MAX)
+    placeRig(pp, lift > 0 and pos + Vector(0, 0, lift) or pos, yaw)
+    updateMovement(pp, dt, yaw, math.min(math.max((CROUCH_FROM - eyeh) / (CROUCH_FROM - CROUCH_FULL), 0), 1))
     updateWeapon(pp, now, dt, weapon or 0, bit(flags, 16))
     updateFlashlight(pp, pos, yaw, pitch, eyeh, bit(flags, 8))
     updateTarget(pp, pos, eyeh, Entities:GetLocalPlayer())
@@ -816,17 +958,61 @@ local function zoneId(center)
     return string.format("%d_%d_%d", r(center.x), r(center.y), r(center.z))
 end
 
+-- Half-Life: Alyx keeps more level-change triggers in its maps than you can use: the way back (and some
+-- maps' link to themselves) is switched off, and a few are fired by the map's own logic. Scripts can't
+-- tell which, so zones.lua lists the ones you can walk into, read from the maps (tools/zones/extract.py).
+-- Switching one of the others on and firing it loads a map the game never meant to, and crashed it.
+-- (Maps it doesn't list, like addon maps, keep every trigger.)
+local function knownZone(list, o)
+    for i, e in ipairs(list) do
+        if math.abs(o.x - e[1]) < 4 and math.abs(o.y - e[2]) < 4 and math.abs(o.z - e[3]) < 4 then return e, i end
+    end
+end
+
+-- a trigger the map only switches on later: hook the output that does it
+local function hookZoneSwitch(e, key)
+    if A.zoneHooked[key] then return end
+    A.zoneHooked[key] = true
+    local src = Entities:FindByName(nil, e.after[1])
+    if not src then return end
+    A.zoneSwitches = A.zoneSwitches or {}
+    A.zoneSwitches[e.after[1]] = { key = key, delay = e.after[3] }
+    src:RedirectOutput(e.after[2], "AMP_ZoneSwitchedOn", src)
+end
+
+-- (global: RedirectOutput takes a function name) the map is switching the trigger on: it counts once it is,
+-- and in a session it's held shut again right away like the others
+function AMP_ZoneSwitchedOn(self)
+    local s = AMP and AMP.zoneSwitches and self and IsValidEntity(self) and AMP.zoneSwitches[self:GetName()]
+    if not s then return end
+    AMP.zoneOn[s.key] = Time() + s.delay
+    if AMP.core then AMP.core:SetThink(function()
+        AMP.nextZoneScan, AMP.nextGate = 0, 0
+        return nil
+    end, "amp_zone_on", s.delay + 0.05) end
+end
+
 local function scanZones()
     local zones = {}
+    local known = A.ZONES and A.ZONES[A.map]
     for _, t in ipairs(Entities:FindAllByClassname("trigger_changelevel")) do
         local o = t:GetOrigin()
-        local mins, maxs = o + t:GetBoundingMins(), o + t:GetBoundingMaxs()
-        local c = t:GetCenter()
-        -- the floor under it (the volume often reaches below the ground)
-        local down = { startpos = c, endpos = Vector(c.x, c.y, mins.z - 64), mask = MASK_PLAYERSOLID }
-        TraceLine(down)
-        local floor = down.hit and math.max(down.pos.z, mins.z) or mins.z
-        table.insert(zones, { ent = t, id = zoneId(c), mins = mins, maxs = maxs, center = c, floor = floor })
+        local usable = not known
+        if known then
+            local e, i = knownZone(known, o)
+            local key = i and (A.map .. "#" .. i)
+            if e and e.after then hookZoneSwitch(e, key) end
+            usable = e ~= nil and (not e.after or (A.zoneOn[key] ~= nil and Time() >= A.zoneOn[key]))
+        end
+        if usable then
+            local mins, maxs = o + t:GetBoundingMins(), o + t:GetBoundingMaxs()
+            local c = t:GetCenter()
+            -- the floor under it (the volume often reaches below the ground)
+            local down = { startpos = c, endpos = Vector(c.x, c.y, mins.z - 64), mask = MASK_PLAYERSOLID }
+            TraceLine(down)
+            local floor = down.hit and math.max(down.pos.z, mins.z) or mins.z
+            table.insert(zones, { ent = t, id = zoneId(c), mins = mins, maxs = maxs, center = c, floor = floor })
+        end
     end
     A.zones = zones
 end
@@ -893,14 +1079,14 @@ local function updateZones(now, p)
     if now < A.nextZoneCheck then return end
     A.nextZoneCheck = now + 0.1
 
-    -- after a level change you arrive standing in the trigger that leads back; like the game itself,
-    -- a zone only counts once you've walked out of it at least once
+    -- after a level change you arrive in (or right next to) the trigger that leads back; like the game
+    -- itself, a zone only counts once you've walked away from it
     local feet = p:GetOrigin()
     local mine = nil
     for _, z in ipairs(A.zones) do
         if insideZone(z, feet) then
             if A.zoneArmed[z.id] and not mine then mine = z.id end
-        else
+        elseif zoneDistance(z, feet) > ZONE_ARM then
             A.zoneArmed[z.id] = true
         end
     end
@@ -950,6 +1136,8 @@ local function goZone(id)
     end
     A.transitioning = true
     A.Emit("going", z.id)
+    -- the other players' avatars mustn't be carried into the next map with you (they're built again there)
+    for _, pp in pairs(A.puppets) do hidePuppet(pp) end
     -- the transition places you in the next map relative to its landmark using the activator, so the
     -- player has to be passed along (with no activator the level change silently stalls)
     local player = Entities:GetLocalPlayer()
@@ -1222,11 +1410,13 @@ end
 -- local player state -> launcher
 
 local function sendLocalState(now, p)
-    if now - A.lastSend < SEND_INTERVAL then return end
     local feet, yaw, pitch, eyeh = localFeetAndView(p)
+    if IS_VR then eyeh = vrEyeHeight(eyeh, now) end  -- (every frame: it learns the player's height)
+    -- (alone nobody needs it; the launcher only keeps track of the level, once a second is plenty)
+    if now - A.lastSend < (mpActive() and SEND_INTERVAL or 1) then return end
     local flags = 0
     if IS_VR then flags = flags + 1 end
-    if eyeh < (IS_VR and 42 or 48) then flags = flags + 2 end
+    if eyeh < 48 then flags = flags + 2 end
     if p:GetHealth() <= 0 then flags = flags + 4 end
     if localFlashlightOn() then flags = flags + 8 end
     if not IS_VR and (A.vmSeq or ""):find("reload") then flags = flags + 16 end
@@ -1240,7 +1430,7 @@ local function sendLocalState(now, p)
         or math.abs(pitch - last.pitch) > 2
         or flags ~= last.flags
         or weapon ~= last.weapon
-    if not changed and now - A.lastSend < HEARTBEAT then return end
+    if not changed and now - A.lastSend < (mpActive() and HEARTBEAT or 1) then return end
 
     A.lastSend = now
     A.lastSent = { pos = feet, yaw = yaw, pitch = pitch, eyeh = eyeh, flags = flags, weapon = weapon }
@@ -1379,8 +1569,9 @@ reg("amp_go", function(id) goZone(id) end)
 
 reg("amp_k", function(idx, class, x, y, z)
     idx = tonumber(idx)
-    local e = EntIndexToHScript(idx)
+    local e = idx and EntIndexToHScript(idx)
     if not e or not IsValidEntity(e) or e:GetClassname() ~= class then return end
+    if not (A.World and A.World.IsHostile and A.World.IsHostile(e)) then return end
     if e:GetHealth() <= 0 then return end
     if (e:GetOrigin() - Vector(tonumber(x), tonumber(y), tonumber(z))):Length() > 600 then return end
     A.suppressKill[idx] = true
@@ -1499,6 +1690,7 @@ end)
 
 listen("change_level_activated", function()
     A.HideOverlays()
+    for _, pp in pairs(A.puppets) do hidePuppet(pp) end
     A.transitioning = true
     A.levelChangeStarted = true
     A.Emit("chl")
@@ -1561,9 +1753,18 @@ end
 -- Never let go of the game's trigger (-iv_attack) when it isn't held: that leaves it stuck down, and the
 -- gun fires by itself until the next real click (NoVR's multitool code steers round the same thing).
 
-local MENU = { "autoreload", "tags", "dot", "turn", "list", "feed", "zones" }   -- its rows, top down
-local MENU_L, MENU_R, MENU_ROW0, MENU_ROW_H = -166, 166, 136, 29    -- HUD units (640x480, x from the centre)
-local MENU_TOP, MENU_BOTTOM = 84, 348                                -- the menu's area (leaving it unlights the row)
+local MENU = { "autoreload", "tags", "dot", "turn", "list", "feed", "zones" }   -- the switches, top down
+-- the actions under them, per role: s = playing alone, h = hosting, c = joined (make_menu.py ACTIONS). Alone,
+-- saving is the game's own; the rest go to the launcher (amp "act")
+local ACTIONS = {
+    { s = "save", h = "save", c = "save" },
+    { h = "syncall", c = "resync" },
+    { h = "stophost", c = "leave" },
+}
+local MENU_L, MENU_R, MENU_ROW0, MENU_ROW_H = -166, 166, 118, 27    -- HUD units (640x480, x from the centre)
+local MENU_ACT0 = 325                                                -- the first action row's top
+local MENU_TOP = 70                                                  -- the menu's area (leaving it unlights the row)
+local MENU_BOTTOM = { s = 377, h = 431, c = 431 }
 local CURSOR_SPEED = 15         -- cursor pixels per thousandth of a degree the view would have turned...
 local CURSOR_SENS = 50          -- ...at this mouse sensitivity (so it moves alike for everyone)
 local CURSOR_PITCH = 0.65       -- the view turns about half as fast again up/down; even it out
@@ -1593,27 +1794,41 @@ local function hudScale()
     return h / 480, w / 2
 end
 
--- the row under screen point (x, y), or nil
+-- alone, hosting or joined
+local function menuRole()
+    if A.cfg.mp == "1" then return A.cfg.role == "host" and "h" or "c" end
+    return "s"
+end
+
+-- the row under screen point (x, y): a switch (1, 2, ...), an action (-1, -2, ...) or nil
 local function rowAt(x, y)
     local s, cx = hudScale()
     local u, v = (x - cx) / s, y / s
     if u < MENU_L or u > MENU_R then return nil end
     local i = math.floor((v - MENU_ROW0) / MENU_ROW_H) + 1
-    if i >= 1 and i <= #MENU then return i end
+    if v >= MENU_ROW0 and i >= 1 and i <= #MENU then return i end
+    local j = math.floor((v - MENU_ACT0) / MENU_ROW_H) + 1
+    if v >= MENU_ACT0 and j >= 1 and j <= #ACTIONS and ACTIONS[j][A.menu.role or "s"] then return -j end
     return nil
 end
 
 local function insideMenu(x, y)
     local s, cx = hudScale()
     local u, v = (x - cx) / s, y / s
-    return u >= MENU_L - 20 and u <= MENU_R + 20 and v >= MENU_TOP and v <= MENU_BOTTOM
+    return u >= MENU_L - 20 and u <= MENU_R + 20 and v >= MENU_TOP and v <= MENU_BOTTOM[A.menu.role or "s"]
 end
 
 local function menuHover(i, sound)
     local m = A.menu
     if i == m.hover then return end
     m.hover = i
-    hudAnim(i and ("AmpMenuHover" .. i) or "AmpMenuHoverNone")
+    if not i then
+        hudAnim("AmpMenuHoverNone")
+    elseif i > 0 then
+        hudAnim("AmpMenuHover" .. i)
+    else
+        hudAnim("AmpMenuAHover" .. -i .. m.role)
+    end
     if i and sound then menuSound("PanoUI.Rollover") end
 end
 
@@ -1634,7 +1849,9 @@ function A.MenuOpen()
     -- the game's reticle (the brackets round the middle of the screen) would sit in the menu
     m.reticle = Convars:GetInt("hud_draw_fixed_reticle")
     if m.reticle and m.reticle ~= 0 then SendToConsole("hud_draw_fixed_reticle 0") end
+    m.role = menuRole()
     hudAnim("AmpMenuOpen")
+    hudAnim("AmpMenuRole" .. m.role)
     m.showAt = Time() + 0.1     -- the switches come in as the rows do
     menuSound("PanoUI.Appear")
     A.Emit("menu", 1)           -- (the launcher keeps the keyboard from the game meanwhile)
@@ -1671,14 +1888,30 @@ local function menuSwitch(i)
     A.Emit("cfg", key, A.cfg[key])
 end
 
+-- an action button: the menu closes and it happens (saving alone is the game's own; the rest is the launcher's)
+local function menuAction(j)
+    local m = A.menu
+    if not m.open or m.showAt then return end
+    local act = ACTIONS[j] and ACTIONS[j][m.role]
+    if not act then return end
+    hudAnim("AmpMenuAPress" .. j .. m.role)
+    menuSound("PanoUI.ToggleOption")
+    local role = m.role
+    A.MenuClose(true)
+    if act == "save" and role == "s" then
+        SendToConsole("save_manual")        -- (NoVR's: saves and shows "game saved")
+    else
+        A.Emit("act", act)
+    end
+end
+
 local function menuClick()
     local m = A.menu
     if not m.open then return end
     local i = rowAt(m.cx, m.cy)
-    if i then
-        menuHover(i, false)
-        menuSwitch(i)
-    end
+    if not i then return end
+    menuHover(i, false)
+    if i > 0 then menuSwitch(i) else menuAction(-i) end
 end
 
 local function updateMenu(now, p)
@@ -1764,7 +1997,9 @@ local function tick()
         updateZones(now, p)
     end
     if A.unloading then return 0 end
-    for _, pp in pairs(A.puppets) do updatePuppet(pp, now, dt) end
+    if not A.transitioning then
+        for _, pp in pairs(A.puppets) do updatePuppet(pp, now, dt) end
+    end
     if now >= A.nextHud then
         drawHud(now, p)
         A.nextHud = now + 0.25
@@ -1827,6 +2062,24 @@ A.started = false
 if A.map == "startup" then
     -- main menu: nothing to draw, just let the launcher know the mod is here
     A.Emit("ready", A.map)
+    -- NoVR's menu start waits for the startup map's relay to say "go to the menu". With -novid (the
+    -- launcher skips the intro) that relay can fire before NoVR listens for it, which leaves the player
+    -- frozen in the debris field facing a blank texture. If NoVR hasn't gone to the menu a moment after
+    -- the player appears, do it for NoVR.
+    if not IS_VR and GlobalSys:CommandLineCheck("-novid") then
+        listen("player_activate", function()
+            local p = Entities:GetLocalPlayer()
+            if not p then return end
+            p:SetThink(function()
+                local goToMenu = rawget(_G, "GoToMainMenu")
+                if Convars:GetBool("vr_enable_fake_vr") and type(goToMenu) == "function" then
+                    A.Emit("err", "startup", "NoVR missed the menu start; going to the menu")
+                    goToMenu()
+                end
+                return nil
+            end, "amp_menu_start", 2.5)
+        end)
+    end
 else
     local function startSoon(delay)
         local p = Entities:GetLocalPlayer()

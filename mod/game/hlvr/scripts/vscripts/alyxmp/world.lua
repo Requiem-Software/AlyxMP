@@ -7,7 +7,8 @@
 -- Entities are named by a "ref": a hash of class|model plus the spot where the entity was first seen,
 -- e.g. "3fa2c1@-256,1984,150". That first sighting is stamped onto the entity as attributes, which are
 -- saved with the game, so a player who loads the host's save carries the host's stamps. Entity
--- indices can't be used for this: they differ between games and change on every load.
+-- indices can't be used for this: they differ between games and change on every load. An enemy a
+-- spawner made is "3fa2c1#4@..." instead: the spawner's 4th, stamped where the spawner is.
 --
 --   p   ref x y z pitch yaw roll   a physics object the sender is moving (they simulate it, we follow)
 --   pr  ref x y z pitch yaw roll   it came to rest there; hand it back to local physics
@@ -24,6 +25,10 @@
 --   ne  ref id                     host: which player an enemy is after (-1: nobody)
 --   nd  ref damage x y z           a player hurt an enemy in their world - the host applies it
 --   sh  weapon x y z hit nx ny nz  the sender's shot landed there - draw a tracer and impact
+--   na  seq part parts ref|x,y,z ...  host: the enemies alive in its world, every few seconds (in parts);
+--                                  the others remove what the host no longer has and pair up the rest
+--   pa  ref x y z pitch yaw roll   host: where a moved object rests in its world (a few every few seconds);
+--                                  the others put theirs there if it drifted
 --   J   <any of the above>         catch-up replay after loading the level fresh (VR joining a NoVR
 --                                  host): applied in order, without the duplicate checks
 
@@ -80,6 +85,25 @@ local NPC_MATCH = 400         -- an enemy we can't find by its ref: the nearest 
 local REF_TOLERANCE = 64      -- how far apart two games' first sightings of the same entity may be
 local NPC_TOLERANCE = 200     -- enemies are often first seen a moment after they spawn and start moving
 local STAMP_SCAN = 1.0        -- look for new entities to stamp this often
+local WALK_PER_TICK = 20      -- the background pass over every entity: this many per frame (stamps them,
+                              -- and keeps the lists of physics objects and enemies the checks go through)
+local NEAR_RADIUS = 450       -- physics objects this close to us are checked for movement every PROP_CHECK...
+local FAR_CHECKS = 32         -- ...and this many of the level's others, round robin
+local PROP_CHECK = 0.05
+local HOOK_ROUND = 5          -- output hooks: every class once this often, one class at a time
+local NPC_REBIND = 280        -- a matched enemy this far from where the host's copy is, while another of its kind
+local NPC_REBIND_NEAR = 120   -- is this close to that spot: the two were swapped - swap them back
+local AUDIT_EVERY = 4         -- host: list the living enemies (and some resting objects) this often
+local AUDIT_PROPS = 8         -- resting objects per audit
+local GHOST_AUDITS = 2        -- an enemy of ours left over in this many audits in a row (and around for a while)
+local GHOST_AGE = 10          -- is a ghost: the host doesn't have it (or one of its kind to pair it with)
+local GHOSTS_PER_AUDIT = 4    -- (removed at most this many at a time)
+local BEHIND_ENEMIES = 3      -- the host has this many enemies we can't find or pair, the same ones audit
+local BEHIND_AUDITS = 3       -- after audit: our world fell behind; reload the host's
+local RESYNC_GAP = 30         -- (asking the launcher at most this often; it decides - at most every few minutes, never right after a load)
+local JOURNAL_WAIT = 15       -- catch-up entries whose entity isn't there yet (spawned a moment after the level
+                              -- starts) wait this long for it, in order
+local SPAWN_TOLERANCE = 4     -- a spawned enemy's stamp is its spawner's spot: exactly the same everywhere
 local NPC_STAMP_SCAN = 0.2    -- new enemies get stamped quickly, before they've walked far from their spawn
 local AI_RATE = 1 / 15        -- wheels / levers / sliding doors being worked
 local AI_INTERP = 0.12
@@ -132,6 +156,7 @@ W.items = {}
 W.npcs = setmetatable({}, { __mode = "k" })
 W.npcList = {}
 W.npcClaim = setmetatable({}, { __mode = "k" })   -- enemy -> the ref it was matched to
+W.hostPos = {}                                    -- ref -> where the host last said its enemy was
 W.anims = setmetatable({}, { __mode = "k" })
 W.replays = {}                                    -- uses we're replaying right now (their scripts chain on)
 W.nextNpcStamp = 0
@@ -154,6 +179,21 @@ W.nextNpcSend = 0
 W.nextNpcCheck = 0
 W.nextStamp = 0
 W.nextHook = 0
+W.walk = { props = {}, npcs = {} }
+W.propList = {}
+W.nearProps = {}
+W.propCursor = 0
+W.nextNear = 0
+W.hookCursor = 0
+W.audit = { parts = {}, misses = {}, behind = 0 }
+W.nextAudit = 0
+W.auditSeq = 0
+W.auditPropCursor = 0
+W.moved = {}                  -- host: refs of objects that were moved and came to rest (for the audit)
+W.passes = 0                  -- background passes over every entity done since the level loaded
+W.fresh = setmetatable({}, { __mode = "k" })   -- enemies seen once, stamped the next time (see stampNewNpcs)
+W.lastResync = -1000
+W.journalWait = {}            -- catch-up entries waiting for their entity (see JOURNAL_WAIT)
 
 ---------------------------------------------------------------------------------------------------
 -- identity
@@ -167,6 +207,7 @@ end
 local function infoOf(e)
     local i = W.info[e]
     if i then return i end
+    local n = e:Attribute_GetIntValue("amp_n", 0)        -- a spawner's n-th (see stampSpawned)
     local idx = e:GetEntityIndex()
     local h = e:Attribute_GetIntValue("amp_h", 0)
     -- an entity that's on its way out (a constraint that just broke, an enemy that just died) has lost
@@ -193,12 +234,15 @@ local function infoOf(e)
     -- names unnamed things after their index when they're used; those numbers don't count.
     local name = e:GetName() or ""
     local ref
-    if #name <= 64 and name:match("^[%w_%-%.]+$") and name:match("%a") and name:sub(1, 4) ~= "amp_" then
+    if n > 0 then
+        -- (an enemy from a spawner goes by which spawn it was: they often all share one name)
+        ref = string.format("%x#%d", h, n) .. at
+    elseif #name <= 64 and name:match("^[%w_%-%.]+$") and name:match("%a") and name:sub(1, 4) ~= "amp_" then
         ref = "=" .. name .. at
     else
         ref = string.format("%x", h) .. at
     end
-    i = { h = h, pos = pos, ref = ref }
+    i = { h = h, n = n, pos = pos, ref = ref }
     W.info[e] = i
     W.infoIdx[idx] = i
     local list = W.byHash[h]
@@ -211,6 +255,41 @@ local function infoOf(e)
 end
 
 local function refOf(e) return infoOf(e).ref end
+
+-- An enemy a spawner (npc_maker, npc_template_maker) just made is named after which of the spawner's
+-- it is: every game runs the same spawners in the same order, so the n-th of its kind from one spawner is
+-- the same enemy everywhere, however close together they appear or wherever they wander. Its stamp is
+-- the spawner's spot (they never move) and its kind as usual (class|model, so a stray one can still be
+-- paired with one of its kind).
+local function stampSpawned(maker, e)
+    if not IsValidEntity(maker) or not IsValidEntity(e) or e:Attribute_GetIntValue("amp_n", 0) > 0 then return end
+    local n = maker:Attribute_GetIntValue("amp_sn", 0) + 1
+    maker:Attribute_SetIntValue("amp_sn", n)
+    local at = infoOf(maker).pos
+    local old = W.info[e]
+    if old then
+        -- (stamped as it appeared, before the spawner said whose it was)
+        local list = W.byHash[old.h]
+        if list then for i = #list, 1, -1 do if list[i] == e then table.remove(list, i) end end end
+        if W.refCache[old.ref] == e then W.refCache[old.ref] = nil end
+        W.info[e] = nil
+        W.infoIdx[e:GetEntityIndex()] = nil
+    end
+    e:Attribute_SetIntValue("amp_h", hash(e:GetClassname() .. "|" .. (e:GetModelName() or "")))
+    e:Attribute_SetIntValue("amp_n", n)
+    e:Attribute_SetFloatValue("amp_x", at.x)
+    e:Attribute_SetFloatValue("amp_y", at.y)
+    e:Attribute_SetFloatValue("amp_z", at.z)
+    infoOf(e)
+end
+
+function AMP_NpcSpawned(self, args)
+    if AMP and AMP.World and AMP.World.OnSpawned and self then AMP.World.OnSpawned(self, args and args.activator) end
+end
+
+function W.OnSpawned(maker, e)
+    if e and IsValidEntity(e) and e.IsNPC and e:IsNPC() then stampSpawned(maker, e) end
+end
 
 local function resolve(ref, tolerance)
     local e = W.refCache[ref]
@@ -232,19 +311,24 @@ local function resolve(ref, tolerance)
         if best then W.refCache[ref] = best end
         return best
     end
-    local hs, x, y, z = ref:match("^(%x+)@(%-?%d+),(%-?%d+),(%-?%d+)$")
+    local hs, sn, x, y, z = ref:match("^(%x+)#?(%d*)@(%-?%d+),(%-?%d+),(%-?%d+)$")
     if not hs then return nil end
     local list = W.byHash[tonumber(hs, 16)]
     if not list then return nil end
+    -- a spawner's n-th is exactly that one; anything else is never one of a spawner's
+    local n = tonumber(sn) or 0
     local target = Vector(tonumber(x), tonumber(y), tonumber(z))
-    local best, bestD = nil, tolerance or REF_TOLERANCE
+    local best, bestD = nil, n > 0 and SPAWN_TOLERANCE or tolerance or REF_TOLERANCE
     for i = #list, 1, -1 do
         local c = list[i]
         if not IsValidEntity(c) then
             table.remove(list, i)
         else
-            local d = (infoOf(c).pos - target):Length()
-            if d < bestD then best, bestD = c, d end
+            local ci = infoOf(c)
+            if ci.n == n then
+                local d = (ci.pos - target):Length()
+                if d < bestD then best, bestD = c, d end
+            end
         end
     end
     if best then W.refCache[ref] = best end
@@ -312,30 +396,111 @@ end
 -- motion is judged against where the object last settled, not frame to frame: constrained things
 -- (nailed boards, locked gates) report velocity and wobble a few degrees while staying put.
 -- Parented things (items a zombie carries, a clip in a gun) just follow their parent.
+local function checkProp(e, now, p)
+    if not IsValidEntity(e) or not propClass(e) then return end
+    local st = W.props[e]
+    local anchor = W.seen[e]
+    if anchor and not st then
+        -- asleep: physics reports it perfectly still, nothing to look at
+        local ok, v = pcall(GetPhysVelocity, e)
+        if ok and v and v.x == 0 and v.y == 0 and v.z == 0 then return end
+    end
+    local cur = pose(e)
+    if not anchor or (st and (st.remote or now < (st.quietUntil or 0))) then
+        -- first sight, or another player drives it / it's settling after their move
+        W.seen[e] = cur
+        return
+    end
+    local d, r = poseDiff(cur, anchor)
+    if st and st.owner == myId() then
+        if d > STILL_DIST or r > STILL_TURN then
+            W.seen[e] = cur
+            st.lastMove = now
+        end
+    elseif (d > START_DIST or r > (e:GetClassname() == "prop_door_rotating_physics" and DOOR_TURN or START_TURN))
+        and (isHost() or held(e) or (cur.o - p:GetOrigin()):Length() < CLAIM_RANGE) then
+        -- it left its resting spot in our world: we simulate it, the others follow
+        st = st or propState(e)
+        st.owner = myId()
+        st.lastSend = -100
+        st.lastMove = now
+        W.seen[e] = cur
+    end
+end
+
+-- The objects near us every check; the rest of the level's a few at a time (the host streams whatever
+-- moves anywhere, so it goes round them all). Objects we or others are moving are checked each time.
 local function scanProps(now, p)
-    for _, e in ipairs(Entities:FindAllInSphere(p:GetOrigin(), SCAN_RADIUS)) do
-        if propClass(e) then
-            local st = W.props[e]
-            local cur = pose(e)
-            local anchor = W.seen[e]
-            if not anchor or (st and (st.remote or now < (st.quietUntil or 0))) then
-                -- first sight, or another player drives it / it's settling after their move
-                W.seen[e] = cur
-            else
-                local d, r = poseDiff(cur, anchor)
-                if st and st.owner == myId() then
-                    if d > STILL_DIST or r > STILL_TURN then
-                        W.seen[e] = cur
-                        st.lastMove = now
+    if now >= W.nextNear then
+        W.nextNear = now + 0.5
+        -- around us, and (the host streams what enemies and explosions move) around everyone else
+        local spots = { p:GetOrigin() }
+        if isHost() then
+            for _, pp in pairs(A.puppets or {}) do
+                if type(pp.rig) == "table" and IsValidEntity(pp.rig) then table.insert(spots, pp.rig:GetOrigin()) end
+            end
+        end
+        local r2 = NEAR_RADIUS * NEAR_RADIUS
+        local near = {}
+        for _, e in ipairs(W.propList) do
+            if IsValidEntity(e) then
+                local o = e:GetOrigin()
+                for _, at in ipairs(spots) do
+                    local dx, dy, dz = o.x - at.x, o.y - at.y, o.z - at.z
+                    if dx * dx + dy * dy + dz * dz < r2 then
+                        table.insert(near, e)
+                        break
                     end
-                elseif (d > START_DIST or r > (e:GetClassname() == "prop_door_rotating_physics" and DOOR_TURN or START_TURN))
-                    and (isHost() or held(e) or (cur.o - p:GetOrigin()):Length() < CLAIM_RANGE) then
-                    -- it left its resting spot in our world: we simulate it, the others follow
-                    st = st or propState(e)
-                    st.owner = myId()
-                    st.lastSend = -100
-                    st.lastMove = now
-                    W.seen[e] = cur
+                end
+            end
+        end
+        W.nearProps = near
+    end
+    for _, e in ipairs(W.nearProps) do checkProp(e, now, p) end
+    for e, st in pairs(W.props) do
+        if st.owner == myId() and not st.remote then checkProp(e, now, p) end
+    end
+    local list = W.propList
+    local n = #list
+    if n == 0 then return end
+    local i = W.propCursor
+    for _ = 1, math.min(FAR_CHECKS, n) do
+        i = i % n + 1
+        checkProp(list[i], now, p)
+    end
+    W.propCursor = i
+end
+
+-- One pass over every entity, a few per frame: new ones get stamped (so the others' refs find them)
+-- and the lists the frequent checks walk are rebuilt, instead of asking the engine for everything
+-- around us several times a second.
+local function walk(p)
+    local w = W.walk
+    if w.cur and not IsValidEntity(w.cur) then
+        -- (the entity we stopped at is gone: start this pass again)
+        w.cur, w.props, w.npcs = nil, {}, {}
+    end
+    for _ = 1, WALK_PER_TICK do
+        -- (not "w.cur and Next(w.cur) or First()": at the end of the list Next is nil and that would start over)
+        local e
+        if w.cur then e = Entities:Next(w.cur) else e = Entities:First() end
+        if not e then
+            W.propList, W.npcList = w.props, w.npcs
+            w.cur, w.props, w.npcs = nil, {}, {}
+            W.passes = W.passes + 1
+            return
+        end
+        w.cur = e
+        if e ~= p and not ours(e) then
+            local class = e:GetClassname()
+            if class ~= "worldent" then
+                local npc = e.IsNPC and e:IsNPC()
+                -- (a new enemy waits for stampNewNpcs: a spawner may still say whose it is)
+                if not W.info[e] and not (npc and HOSTILE_SET[class]) then infoOf(e) end
+                if PROP_CLASSES[class] or class:sub(1, 5) == "item_" then
+                    table.insert(w.props, e)
+                elseif npc and not SKIP_NPCS[class] then
+                    table.insert(w.npcs, e)
                 end
             end
         end
@@ -351,6 +516,8 @@ local function sendOwned(now)
     for e, st in pairs(W.props) do
         if not IsValidEntity(e) then
             W.props[e] = nil
+        elseif not st.owner and not st.remote and now > (st.quietUntil or 0) + 5 then
+            W.props[e] = nil      -- nobody's moving it any more
         elseif st.owner == myId() and not st.remote and now - (st.lastSend or -100) >= st.rate then
             local still = now - (st.lastMove or 0) > REST_TIME
             if still and held(e) then
@@ -361,6 +528,8 @@ local function sendOwned(now)
             elseif still then
                 sendPose("pr", e)
                 st.owner = nil
+                st.quietUntil = now
+                if isHost() then W.moved[refOf(e)] = e end
             else
                 sendPose("p", e)
                 st.lastSend = now
@@ -425,6 +594,7 @@ local function onPropMsg(from, ref, rest, x, y, z, ax, ay, az)
         still(e)
         st.owner = nil
         st.quietUntil = Time() + SETTLE_TIME
+        if isHost() then W.moved[ref] = e end
         return
     end
     if not st.frozen and e.DisableMotion then
@@ -628,8 +798,45 @@ for _, outs in pairs(IO_HOOKS) do
     for _, o in ipairs(outs) do ioCallback(o) end
 end
 
+-- the classes hooked for spawned enemies (see stampSpawned)
+local SPAWNERS = { "npc_maker", "npc_template_maker" }
+
+local function hookSpawners()
+    for _, class in ipairs(SPAWNERS) do
+        for _, e in ipairs(Entities:FindAllByClassname(class)) do
+            if e:Attribute_GetIntValue("amp_spw", 0) == 0 then
+                e:Attribute_SetIntValue("amp_spw", 1)
+                e:RedirectOutput("OnSpawnNPC", "AMP_NpcSpawned", e)
+            end
+        end
+    end
+end
+
+-- hook one class at a time, round after round, instead of all of them at once every few seconds
+local function hookSome()
+    if not W.hookClasses then
+        W.hookClasses = {}
+        for class in pairs(IO_HOOKS) do table.insert(W.hookClasses, class) end
+        table.sort(W.hookClasses)
+    end
+    local list = W.hookClasses
+    local now = Time()
+    if now < (W.nextHookClass or 0) then return end
+    W.nextHookClass = now + HOOK_ROUND / #list
+    W.hookCursor = W.hookCursor % #list + 1
+    local class = list[W.hookCursor]
+    for _, e in ipairs(Entities:FindAllByClassname(class)) do
+        if not W.hooked[e] and e:Attribute_GetIntValue("amp_io", 0) == 0 then
+            W.hooked[e] = true
+            e:Attribute_SetIntValue("amp_io", 1)
+            for _, o in ipairs(IO_HOOKS[class]) do e:RedirectOutput(o, ioCallback(o), e) end
+        end
+    end
+end
+
 -- hook everything once per load, then pick up entities spawned later
 local function hookAll()
+    hookSpawners()
     for _, t in ipairs(Entities:FindAllByClassname("trigger_once")) do
         if not W.hooked[t] and t:Attribute_GetIntValue("amp_io", 0) == 0 then
             W.hooked[t] = true
@@ -987,11 +1194,15 @@ local function refreshNpcList()
 end
 
 -- enemies spawned mid-game are stamped (named) where they appear, before they walk off: every game
--- then names them alike. They also report when they find or lose an enemy (the host uses that).
+-- then names them alike (a spawner's are named after the spawner, see stampSpawned). They also report when they find or lose an enemy (the host uses that).
 local function stampNewNpcs()
     for _, class in ipairs(HOSTILE_NPCS) do
         for _, e in ipairs(Entities:FindAllByClassname(class)) do
-            if not W.info[e] and not ours(e) then infoOf(e) end
+            -- the check after it appears: a spawner's OnSpawnNPC (stampSpawned) arrives a frame after the
+            -- enemy, and names it after the spawner
+            if not W.info[e] and not ours(e) then
+                if W.fresh[e] then infoOf(e) else W.fresh[e] = true end
+            end
             if e:Attribute_GetIntValue("amp_ne", 0) == 0 then
                 e:Attribute_SetIntValue("amp_ne", 1)
                 e:RedirectOutput("OnFoundEnemy", "AMP_NpcFoundEnemy", e)
@@ -1030,6 +1241,8 @@ function AMP_AvatarHit(self, args)
         AMP.World.AvatarHit(self, args and args.activator)
     end
 end
+
+function W.IsHostile(e) return HOSTILE_SET[e:GetClassname()] == true end
 
 function W.NpcCombat(e, on)
     npcRec(e).combat = on
@@ -1103,8 +1316,9 @@ end
 
 -- clients: notice health lost in our world and report it so the host's enemy takes it too
 local function clientCheckDamage(p)
-    for _, e in ipairs(Entities:FindAllInSphere(p:GetOrigin(), 2500)) do
-        if isNpc(e) then
+    local here = p:GetOrigin()
+    for _, e in ipairs(W.npcList) do
+        if IsValidEntity(e) and isNpc(e) and (e:GetOrigin() - here):Length() < 2500 then
             local rec = npcRec(e)
             local hp = e:GetHealth()
             if rec.lastHp and hp < rec.lastHp and hp ~= rec.expectHp then
@@ -1121,12 +1335,20 @@ end
 -- around where the sender says it is that isn't already matched to something else.
 local function npcByRef(ref, near)
     local e = resolve(ref, NPC_TOLERANCE)
-    if e and isNpc(e) and (W.npcClaim[e] == nil or W.npcClaim[e] == ref) then
-        W.npcClaim[e] = ref
-        return e
+    if e and isNpc(e) then
+        local claim = W.npcClaim[e]
+        if claim and claim ~= ref and refOf(e) == ref then
+            -- it was paired with another of the host's enemies as a guess, but it's this one exactly
+            if W.refCache[claim] == e then W.refCache[claim] = nil end
+            claim = nil
+        end
+        if claim == nil or claim == ref then
+            W.npcClaim[e] = ref
+            return e
+        end
     end
     if not near then return nil end
-    local hs = ref:match("^(%x+)@")
+    local hs = ref:match("^(%x+)[#@]")
     local h = hs and tonumber(hs, 16)
     if not h then return nil end
     local best, bestD = nil, NPC_MATCH
@@ -1154,9 +1376,35 @@ local function onNpcHealth(ref, hp)
     end
 end
 
+-- The host's enemy `ref` is at `pos`, but the one we matched to it is far from there while another of
+-- its kind is right there: two that spawned together got swapped. Swap them back.
+local function rebind(ref, e, pos)
+    if (e:GetOrigin() - pos):Length() < NPC_REBIND then return e end
+    local h = infoOf(e).h
+    local best, bestD = nil, NPC_REBIND_NEAR
+    for _, c in ipairs(W.byHash[h] or {}) do
+        if c ~= e and IsValidEntity(c) and isNpc(c) and c:IsAlive() then
+            local d = (c:GetOrigin() - pos):Length()
+            -- (one that's matched to another enemy only if that one is far from it too)
+            local theirs = W.npcClaim[c]
+            local free = not theirs or (W.hostPos[theirs] and (c:GetOrigin() - W.hostPos[theirs]):Length() > NPC_REBIND)
+            if d < bestD and free then best, bestD = c, d end
+        end
+    end
+    if not best then return e end
+    local other = W.npcClaim[best]
+    W.npcClaim[e] = other
+    if other then W.refCache[other] = e end
+    W.npcClaim[best] = ref
+    W.refCache[ref] = best
+    return best
+end
+
 local function onNpcPos(ref, pos, yaw)
     local e = npcByRef(ref, pos)
     if not e or STATIC_NPCS[e:GetClassname()] then return end
+    W.hostPos[ref] = pos
+    e = rebind(ref, e, pos)
     local rec = npcRec(e)
     -- only while the host's copy is in a fight: before that both copies run the same scripts (a zombie
     -- breaking through a wall, a scripted walk), and being moved would break them out of it
@@ -1216,7 +1464,8 @@ end
 
 -- a client hurt this enemy in their game: the host's copy takes it, from that player's avatar
 local function onNpcDamage(from, ref, dmg, near)
-    if not isHost() then return end
+    if not isHost() or not dmg or dmg <= 0 then return end
+    dmg = math.min(dmg, 400)    -- (what one shot can do; the launcher drops anything bigger)
     local e = npcByRef(ref, near)
     if not e or not e:IsAlive() then return end
     local pp = A.puppets and A.puppets[from]
@@ -1226,14 +1475,259 @@ local function onNpcDamage(from, ref, dmg, near)
     DestroyDamageInfo(info)
 end
 
+-- ---------------------------------------------------------------- audits and automatic resync
+-- Every few seconds the host lists the enemies alive in its world, and where. Each client pairs them with
+-- its own: by name first, then the nearest of the kind around the host's spot, then (for ones that stay
+-- unpaired) any of the kind, brought to the host's spot. What's left over of ours is a ghost - the host
+-- killed it, or never had it - and goes. When the host keeps listing enemies we have nothing for, our
+-- world fell behind the host's: we ask for it again (the launcher loads it).
+
+local function needResync(why)
+    local now = Time()
+    if isHost() or now - W.lastResync < RESYNC_GAP then return end
+    W.lastResync = now
+    A.Emit("resync", why)
+end
+
+local function kindOf(ref)
+    local hs = ref:match("^(%x+)[#@]")
+    if hs then return tonumber(hs, 16) end
+    local e = resolve(ref)
+    return e and infoOf(e).h
+end
+
+-- host: the enemies alive in its world, in parts that fit a message
+local function hostSendAudit()
+    if W.passes < 1 then return end      -- (the list of them isn't complete yet)
+    W.auditSeq = W.auditSeq % 999 + 1
+    local entries = {}
+    for _, e in ipairs(W.npcList) do
+        if IsValidEntity(e) and e:IsAlive() and HOSTILE_SET[e:GetClassname()] then
+            local o = e:GetOrigin()
+            -- ("|", not ":" - the console splits arguments at colons)
+            table.insert(entries, string.format("%s|%d,%d,%d", refOf(e), math.floor(o.x + 0.5), math.floor(o.y + 0.5), math.floor(o.z + 0.5)))
+        end
+    end
+    local parts, part = {}, {}
+    local len = 0
+    for _, en in ipairs(entries) do
+        if len + #en + 1 > 440 then
+            table.insert(parts, part)
+            part, len = {}, 0
+        end
+        table.insert(part, en)
+        len = len + #en + 1
+    end
+    table.insert(parts, part)
+    if #parts > 20 then return end
+    for i, pt in ipairs(parts) do
+        send("na", W.auditSeq, i, #parts, #pt > 0 and table.concat(pt, " ") or "-")
+    end
+    -- and where a few of the objects that were moved rest, round robin
+    local refs = {}
+    for ref, e in pairs(W.moved) do
+        if IsValidEntity(e) then table.insert(refs, ref) else W.moved[ref] = nil end
+    end
+    table.sort(refs)
+    for _ = 1, math.min(AUDIT_PROPS, #refs) do
+        W.auditPropCursor = W.auditPropCursor % #refs + 1
+        local ref = refs[W.auditPropCursor]
+        local e = W.moved[ref]
+        local st = W.props[e]
+        -- (not ones that fell out of the level: nothing to put right there)
+        if not (st and (st.owner or st.remote)) and not held(e) and e:GetOrigin().z > -15000 then
+            local o, a = e:GetOrigin(), e:GetAngles()
+            send("pa", ref, f1(o.x), f1(o.y), f1(o.z), f1(a.x), f1(a.y), f1(a.z))
+        end
+    end
+end
+
+local function killGhost(e)
+    W.suppressKill[e] = true
+    npcRec(e).expectHp = 0      -- (not damage we dealt: nothing to tell the host)
+    DoEntFireByInstanceHandle(e, "SetHealth", "0", 0, nil, nil)
+    if A.core then A.core:SetThink(function()
+        if IsValidEntity(e) and e:GetHealth() > 0 then e:Kill() end
+        return nil
+    end, "amp_ghost_" .. e:GetEntityIndex(), 1.0) end
+end
+
+-- client: a whole audit arrived
+local function onAudit(entries)
+    if W.passes < 1 then return end
+    local now = Time()
+    local mine = {}                        -- our living enemies, by kind
+    for _, e in ipairs(W.npcList) do
+        if IsValidEntity(e) and e:IsAlive() and HOSTILE_SET[e:GetClassname()] then
+            local h = infoOf(e).h
+            mine[h] = mine[h] or {}
+            table.insert(mine[h], e)
+        end
+    end
+    local taken = {}                       -- ours -> the host's entry it's paired with now
+    local function take(en, e)
+        taken[e] = en
+        en.e = e
+    end
+    -- 1. by name (or the pairing we already had)
+    for _, en in ipairs(entries) do
+        en.h = kindOf(en.ref)
+        W.hostPos[en.ref] = en.pos
+        local e = resolve(en.ref, NPC_TOLERANCE)
+        if e and IsValidEntity(e) and e:IsAlive() and isNpc(e) and not taken[e] then take(en, e) end
+    end
+    -- 2. the nearest unpaired one of its kind around the host's spot; a pair far apart while one of the
+    --    kind is right at the host's spot: swapped, so take that one instead
+    for _, en in ipairs(entries) do
+        if en.h then
+            local far = en.e and (en.e:GetOrigin() - en.pos):Length() > NPC_REBIND
+            if not en.e or far then
+                local best, bestD = nil, en.e and NPC_REBIND_NEAR or NPC_MATCH
+                for _, c in ipairs(mine[en.h] or {}) do
+                    local d = (c:GetOrigin() - en.pos):Length()
+                    local other = taken[c]
+                    local free = not other or (other ~= en and (c:GetOrigin() - other.pos):Length() > NPC_REBIND)
+                    if d < bestD and free then best, bestD = c, d end
+                end
+                if best then
+                    local other = taken[best]
+                    if en.e then
+                        -- swap: ours that was paired with this entry goes to the one `best` was paired with
+                        taken[en.e] = other
+                        if other then other.e = en.e end
+                    elseif other then
+                        other.e = nil
+                    end
+                    take(en, best)
+                end
+            end
+        end
+    end
+    -- 3. still unpaired, two audits running: any left over of the kind, wherever it is, brought over
+    local au = W.audit
+    au.unpaired = au.unpaired or {}
+    local unpaired = {}
+    for _, en in ipairs(entries) do
+        if not en.e and en.h then
+            unpaired[en.ref] = (au.unpaired[en.ref] or 0) + 1
+            if unpaired[en.ref] >= 2 then
+                local best, bestD = nil, math.huge
+                for _, c in ipairs(mine[en.h] or {}) do
+                    if not taken[c] and (au.misses[c] or 0) >= 1 then
+                        local d = (c:GetOrigin() - en.pos):Length()
+                        if d < bestD then best, bestD = c, d end
+                    end
+                end
+                if best then
+                    take(en, best)
+                    unpaired[en.ref] = nil
+                    if bestD > NPC_TELEPORT then best:SetAbsOrigin(en.pos) end
+                end
+            end
+        end
+    end
+    au.unpaired = unpaired
+    -- the pairs stand until the next audit
+    for _, list in pairs(mine) do
+        for _, e in ipairs(list) do
+            local en = taken[e]
+            W.npcClaim[e] = en and en.ref or nil
+            if en then W.refCache[en.ref] = e end
+        end
+    end
+    -- 4. ours that are left over: ghosts. (Not when none of the host's enemies are ours at all: that's
+    --    another world, not a few ghosts - the resync below handles that.)
+    local paired = false
+    for _ in pairs(taken) do paired = true break end
+    local trusted = paired or #entries == 0
+    local misses = au.misses
+    local removed = 0
+    for _, list in pairs(mine) do
+        for _, e in ipairs(list) do
+            if taken[e] then
+                misses[e] = nil
+                npcRec(e).leftSince = nil
+            elseif trusted then
+                local rec = npcRec(e)
+                rec.leftSince = rec.leftSince or now
+                misses[e] = (misses[e] or 0) + 1
+                if misses[e] >= GHOST_AUDITS and now - rec.leftSince > GHOST_AGE and removed < GHOSTS_PER_AUDIT then
+                    misses[e] = nil
+                    removed = removed + 1
+                    killGhost(e)
+                end
+            end
+        end
+    end
+    -- 5. the host's that we keep having nothing for (the same ones, audit after audit): we're behind
+    local behind = 0
+    for _, count in pairs(unpaired) do
+        if count >= BEHIND_AUDITS then behind = behind + 1 end
+    end
+    if behind >= BEHIND_ENEMIES then
+        au.unpaired = {}
+        needResync("enemies")
+    end
+end
+
+local function onAuditPart(seq, part, parts, a)
+    local au = W.audit
+    if au.seq ~= seq then
+        au.seq = seq
+        au.parts = {}
+    end
+    local entries = {}
+    for i = 4, #a do
+        local ref, x, y, z = a[i]:match("^(.+)|(%-?%d+),(%-?%d+),(%-?%d+)$")
+        if ref then
+            table.insert(entries, { ref = ref, pos = Vector(tonumber(x), tonumber(y), tonumber(z)) })
+        elseif a[i] ~= "-" then
+            -- something we can't read: this audit can't be trusted (it would make everything look like a ghost)
+            au.seq = nil
+            au.parts = {}
+            return
+        end
+    end
+    au.parts[part] = entries
+    for i = 1, parts do if not au.parts[i] then return end end
+    local all = {}
+    for i = 1, parts do for _, en in ipairs(au.parts[i]) do table.insert(all, en) end end
+    au.parts = {}
+    onAudit(all)
+end
+
+-- client: where the host's copy of a moved object rests; ours goes there if it drifted (unless we moved
+-- it a moment ago: the host may not have heard yet)
+local function onPropAudit(ref, pos, ax, ay, az)
+    local e = resolve(ref)
+    if not e or not propClass(e) or held(e) then return end
+    local st = W.props[e]
+    if st and (st.owner or st.remote or Time() < (st.quietUntil or 0) + 3) then return end
+    local a = e:GetAngles()
+    if (e:GetOrigin() - pos):Length() < 12 and math.abs(angDiff(a.x, ax)) < 15 and math.abs(angDiff(a.y, ay)) < 15
+        and math.abs(angDiff(a.z, az)) < 15 then return end
+    e:SetAbsOrigin(pos)
+    e:SetAngles(ax, ay, az)
+    still(e)
+    W.seen[e] = pose(e)
+end
+
 local function onKilled(ref, near)
     local e = npcByRef(ref, near)
-    if not e or e:GetHealth() <= 0 then return end
+    if not e then return end
     W.suppressKill[e] = true
+    npcRec(e).expectHp = 0      -- (not damage we dealt: nothing to tell the host)
+    if W.journal then
+        -- catch-up after loading the level: it died long ago over there. Right after a load an enemy can still
+        -- be setting itself up (no health yet, so SetHealth 0 does nothing): remove it outright
+        e:Kill()
+        return
+    end
+    if e:GetHealth() <= 0 then return end
     DoEntFireByInstanceHandle(e, "SetHealth", "0", 0, nil, nil)
     -- some enemies ignore SetHealth 0 (scripted states); remove those
     if A.core then A.core:SetThink(function()
-        if IsValidEntity(e) and e:GetHealth() > 0 then e:Kill() end
+        if IsValidEntity(e) and (e:GetHealth() > 0 or e:IsAlive()) then e:Kill() end
         return nil
     end, "amp_kill_" .. ref, 1.0) end
 end
@@ -1245,15 +1739,39 @@ function W.Start()
     stampAll()
     hookAll()
     refreshNpcList()
+    local props = {}
+    for class in pairs(PROP_CLASSES) do
+        for _, e in ipairs(Entities:FindAllByClassname(class)) do table.insert(props, e) end
+    end
+    W.propList = props
+    W.passes = 0
     W.nextStamp = Time() + STAMP_SCAN
     W.nextHook = Time() + 5
 end
 
+-- the waiting catch-up entries, in order: each once its entity is there (or it waited long enough - then it
+-- goes ahead anyway, and the usual fallbacks get their chance)
+local function replayWaiting(now)
+    while #W.journalWait > 0 do
+        local j = W.journalWait[1]
+        if j.args[1] and not resolve(j.args[1], NPC_TOLERANCE) and now < j.giveUp then return end
+        table.remove(W.journalWait, 1)
+        W.journal = true
+        local ok, err = pcall(W.Receive, j.from, j.kind, j.args)
+        W.journal = false
+        if not ok then A.Emit("err", "journal", tostring(err)) end
+    end
+end
+
 function W.Tick(now, p)
     if not active() or not p then return end
+    walk(p)
+    if #W.journalWait > 0 and now >= (W.nextJournalTry or 0) then
+        W.nextJournalTry = now + 0.5
+        replayWaiting(now)
+    end
     if now >= W.nextStamp then
         W.nextStamp = now + STAMP_SCAN
-        stampAll()
         ensureRelationships()
     end
     if now >= W.nextNpcStamp then
@@ -1261,7 +1779,7 @@ function W.Tick(now, p)
         stampNewNpcs()
     end
     if now >= W.nextScan then
-        W.nextScan = now + 0.1
+        W.nextScan = now + PROP_CHECK
         scanProps(now, p)
     end
     sendOwned(now)
@@ -1273,18 +1791,19 @@ function W.Tick(now, p)
         W.nextItems = now + 0.25
         scanItems(now, p)
     end
-    if now >= W.nextNpcScan then
-        W.nextNpcScan = now + 2
-        refreshNpcList()
-    end
+    hookSome()
     if now >= W.nextHook then
         W.nextHook = now + 5
-        hookAll()
+        hookSpawners()
     end
     if isHost() then
         if now >= W.nextNpcSend then
             W.nextNpcSend = now + 0.25
             hostSendNpcs(now)
+        end
+        if now >= W.nextAudit then
+            W.nextAudit = now + AUDIT_EVERY
+            hostSendAudit()
         end
     elseif now >= W.nextNpcCheck then
         W.nextNpcCheck = now + 0.1
@@ -1296,6 +1815,12 @@ function W.Receive(from, kind, a)
     if kind == "J" then
         local rest = {}
         for i = 2, #a do rest[i - 1] = a[i] end
+        -- what the others did before we loaded. Its entity may not exist yet (some are spawned a moment
+        -- after the level starts): then it waits, and so does everything after it, to keep the order
+        if #W.journalWait > 0 or (rest[1] and not resolve(rest[1], NPC_TOLERANCE)) then
+            table.insert(W.journalWait, { from = from, kind = a[1], args = rest, giveUp = Time() + JOURNAL_WAIT })
+            return
+        end
         W.journal = true
         local ok, err = pcall(W.Receive, from, a[1], rest)
         W.journal = false
@@ -1310,6 +1835,14 @@ function W.Receive(from, kind, a)
     end
     local ref = a[1]
     if not ref then return end
+    -- enemy health / position / target are the host's to say (the host is player 1; the launcher checks
+    -- this too)
+    if (kind == "nh" or kind == "np" or kind == "ne" or kind == "na" or kind == "pa") and (isHost() or from ~= 1) then return end
+    if kind == "na" then
+        local seq, part, parts = n(1), n(2), n(3)
+        if seq and part and parts and part >= 1 and part <= parts and parts <= 20 then onAuditPart(seq, part, parts, a) end
+        return
+    end
     if kind == "p" or kind == "pr" then
         local x, y, z, ax, ay, az = n(2), n(3), n(4), n(5), n(6), n(7)
         if az then onPropMsg(from, ref, kind == "pr", x, y, z, ax, ay, az) end
@@ -1350,6 +1883,8 @@ function W.Receive(from, kind, a)
         if n(2) then onNpcDamage(from, ref, n(2), n(5) and Vector(n(3), n(4), n(5)) or nil) end
     elseif kind == "ne" then
         if n(2) and not isHost() then onNpcEnemy(ref, n(2)) end
+    elseif kind == "pa" then
+        if n(7) then onPropAudit(ref, Vector(n(2), n(3), n(4)), n(5), n(6), n(7)) end
     end
 end
 

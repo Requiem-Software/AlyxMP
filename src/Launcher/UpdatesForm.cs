@@ -20,9 +20,9 @@ namespace AlyxMP
 
             var title = Theme.Label("UPDATES", Theme.Title, Theme.Accent);
             title.Location = new Point(16, 10);
-            string state = newer != null ? $"You have v{ModFiles.Version}. v{newer.Version} is out."
-                : releases.Count > 0 ? $"You have v{ModFiles.Version}, the latest version."
-                : $"You have v{ModFiles.Version}.";
+            string state = newer != null ? $"You have v{ModFiles.Label}. v{newer.Version} is out."
+                : releases.Count > 0 ? $"You have v{ModFiles.Label}, the latest version."
+                : $"You have v{ModFiles.Label}.";
             var status = Theme.Label(state, Theme.UiBold, newer != null ? Theme.Accent : Theme.Text);
             status.Location = new Point(20, 52);
 

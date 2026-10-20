@@ -980,6 +980,17 @@ Scheme
 				"custom"	"1"
 			}
 		}
+		AmpMenuBtn
+		{
+			"1"
+			{
+				"name"		"AlyxMPMenuKey"
+				"tall"		"6"
+				"weight"	"0"
+				"antialias"	"1"
+				"custom"	"1"
+			}
+		}
 // ---- end of the settings menu ----
 	}
 

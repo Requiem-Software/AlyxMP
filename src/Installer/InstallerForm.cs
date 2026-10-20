@@ -38,7 +38,7 @@ namespace AlyxMP
 
             var title = Theme.Label("ALYX MULTIPLAYER", Theme.Title, Theme.Accent);
             title.Location = new Point(18, 12);
-            var sub = Theme.Label("SETUP  v" + ModFiles.Version, Theme.UiBold, Theme.Muted);
+            var sub = Theme.Label("SETUP  v" + ModFiles.Label, Theme.UiBold, Theme.Muted);
             sub.Location = new Point(400, 34);
             var blurb = Theme.Label("Adds online co-op to Half-Life: Alyx. Host a game, your friends join, and you play the\r\ncampaign together - everyone shows up as Alyx.", Theme.Ui, Theme.Text);
             blurb.Location = new Point(22, 62);

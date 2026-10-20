@@ -60,6 +60,10 @@ namespace AlyxMP
         public event Action<string> World;            // world-sync payload from the in-game mod
         public event Action<bool> Menu;               // the in-game settings menu opened / closed
         public event Action<string, string> Setting;  // a switch in that menu was flipped: amp_cfg key, value
+        public event Action<string> MenuAction;       // an action button in that menu: save, syncall, resync, stophost, leave
+        public event Action<string> Desync;           // the mod found our world drifted from the host's (why)
+
+        static readonly string[] MenuActions = { "save", "syncall", "resync", "stophost", "leave" };
 
         readonly string hla;
         readonly VConClient vcon;
@@ -194,6 +198,12 @@ namespace AlyxMP
                 case "cfg":
                     if (p.Length == 2 && (p[1] == "0" || p[1] == "1")) Setting?.Invoke(p[0], p[1]);
                     break;
+                case "act":
+                    if (p.Length == 1 && Array.IndexOf(MenuActions, p[0]) >= 0) MenuAction?.Invoke(p[0]);
+                    break;
+                case "resync":
+                    if (p.Length == 1 && Regex.IsMatch(p[0], "^[a-z]{1,16}$")) Desync?.Invoke(p[0]);
+                    break;
                 case "w":
                     var world = Clean.World(rest);
                     if (world != null) World?.Invoke(world);
@@ -217,13 +227,21 @@ namespace AlyxMP
         public static string Launch(string hla, LaunchOptions o)
         {
             var args = new List<string>();
-            if (o.NoVR) args.AddRange(new[] { "-novr", "+vr_enable_fake_vr", "1", "-defaultmenu" });
-            else args.AddRange(new[] { "+hlvr_auto_dismiss_loading", "1" });
-            args.AddRange(new[] { "-console", "-vconsole", "-vconport", o.VConPort.ToString(), "-novid" });
-            if (o.Windowed && o.Width > 0 && o.Height > 0)
-                args.AddRange(new[] { "-window", "-w", o.Width.ToString(), "-h", o.Height.ToString() });
-            else if (!o.Windowed)
-                args.Add("-fullscreen");
+            if (o.NoVR)
+            {
+                args.AddRange(new[] { "-novr", "+vr_enable_fake_vr", "1", "-defaultmenu" });
+                args.AddRange(new[] { "-console", "-vconsole", "-vconport", o.VConPort.ToString(), "-novid" });
+                if (o.Windowed && o.Width > 0 && o.Height > 0)
+                    args.AddRange(new[] { "-window", "-w", o.Width.ToString(), "-h", o.Height.ToString() });
+                else if (!o.Windowed)
+                    args.Add("-fullscreen");
+            }
+            else
+            {
+                // VR: as plain a start as the game gets - the headset's startup sequence runs through its
+                // intro, and the desktop window is only a mirror. (The mod's link is all we add.)
+                args.AddRange(new[] { "-vconsole", "-vconport", o.VConPort.ToString() });
+            }
             if (!string.IsNullOrWhiteSpace(o.Extra)) args.Add(o.Extra.Trim());
             var joined = string.Join(" ", args);
 

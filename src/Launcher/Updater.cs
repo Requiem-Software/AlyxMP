@@ -20,6 +20,7 @@ namespace AlyxMP
         public string Notes = "";       // markdown
         public string SetupUrl;         // its AlyxMP-Setup.exe
         public long SetupSize;
+        public string SetupSha256;      // GitHub's checksum of it (lowercase hex), when it gives one
     }
 
     /// <summary>
@@ -31,6 +32,8 @@ namespace AlyxMP
     {
         const string ReleasesApi = "https://api.github.com/repos/Requiem-Software/AlyxMP/releases?per_page=30";
         const string SetupAsset = "AlyxMP-Setup.exe";
+        // setups only ever come from this repository's own release downloads
+        const string DownloadPrefix = "https://github.com/Requiem-Software/AlyxMP/releases/download/";
 
         public static Version Current => ParseVersion(ModFiles.Version);
 
@@ -76,7 +79,12 @@ namespace AlyxMP
                     foreach (var asset in assets.OfType<Dictionary<string, object>>())
                         if (string.Equals(Str(asset, "name"), SetupAsset, StringComparison.OrdinalIgnoreCase))
                         {
-                            rel.SetupUrl = Str(asset, "browser_download_url");
+                            var url = Str(asset, "browser_download_url");
+                            if (url == null || !url.StartsWith(DownloadPrefix, StringComparison.Ordinal)) continue;
+                            rel.SetupUrl = url;
+                            var digest = Str(asset, "digest");
+                            if (digest != null && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                                rel.SetupSha256 = digest.Substring(7).Trim().ToLowerInvariant();
                             try { rel.SetupSize = Convert.ToInt64(asset["size"], CultureInfo.InvariantCulture); } catch (Exception) { }
                         }
                 list.Add(rel);
@@ -103,6 +111,18 @@ namespace AlyxMP
             }
             if (r.SetupSize > 0 && new FileInfo(part).Length != r.SetupSize)
                 throw new InvalidOperationException("the download was incomplete");
+            if (r.SetupSha256 != null)
+            {
+                string got;
+                using (var sha = System.Security.Cryptography.SHA256.Create())
+                using (var fs = File.OpenRead(part))
+                    got = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
+                if (got != r.SetupSha256)
+                {
+                    File.Delete(part);
+                    throw new InvalidOperationException("the download doesn't match GitHub's checksum");
+                }
+            }
             File.Copy(part, path, true);
             File.Delete(part);
             return path;

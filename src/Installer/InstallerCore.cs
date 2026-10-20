@@ -114,7 +114,7 @@ namespace AlyxMP
             }
             if (count == 0) throw new InvalidOperationException("This installer is missing its files - download it again.");
             File.WriteAllText(Path.Combine(ModFiles.LauncherDir(hla), "README.txt"),
-                "Alyx Multiplayer " + ModFiles.Version + Environment.NewLine +
+                "Alyx Multiplayer " + ModFiles.Label + Environment.NewLine +
                 "Start AlyxMP.exe, host or join a game, then launch Half-Life: Alyx from it." + Environment.NewLine +
                 "To uninstall, run AlyxMP-Setup.exe and press Uninstall." + Environment.NewLine);
             return count;
@@ -211,6 +211,9 @@ namespace AlyxMP
             // the other players' avatar: its model and animation graph
             DeleteDir(Path.Combine(GamePaths.Hlvr(hla), "models", "alyxmp"));
             try { File.Delete(Path.Combine(GamePaths.Hlvr(hla), "animgraphs", "alyxmp_avatar.vanmgrph_c")); } catch (Exception) { }
+            // the panel layout of the name tags drawn in the world
+            try { File.Delete(Path.Combine(GamePaths.Hlvr(hla), "panorama", "layout", "alyxmp_nametag.vxml_c")); } catch (Exception) { }
+            try { File.Delete(Path.Combine(GamePaths.Hlvr(hla), "panorama", "styles", "alyxmp_nametag.vcss_c")); } catch (Exception) { }
             ModFiles.RemoveHook(hla);
             ModFiles.RemoveNoVRUseHook(hla);
             ModFiles.RemoveHud(hla);

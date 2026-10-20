@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net.Sockets;
@@ -11,7 +13,7 @@ namespace AlyxMP
 {
     enum Msg : byte
     {
-        Hello = 1,       // C>H  proto \t modVersion \t name \t password \t gameBuild \t novr
+        Hello = 1,       // C>H  proto \t modVersion \t name \t proof \t gameBuild \t novr  (proof: see Challenge)
         Welcome = 2,     // H>C  yourId
         Reject = 3,      // H>C  reason
         PlayerJoined = 4,// H>C  id \t name
@@ -35,22 +37,32 @@ namespace AlyxMP
         Arrived = 21,    // C>H  map   finished loading after a level change (and paused itself)
         Release = 22,    // H>C  -     everyone has arrived: unpause
         Teleport = 23,   // H>C  x y z yaw   go stand there (someone used /tp on you)
+        Challenge = 24,  // H>C  nonce   sent on connect; Hello answers with HMAC-SHA256(code \n password, nonce \n proto),
+                         //      so the join code and password never cross the network
+        SaveRequest = 25,// C>H  -     a guest pressed Save in the in-game menu: the host saves (its world is everyone's)
     }
 
     /// <summary>
     /// A framed TCP connection: 1 byte type, 4 byte little-endian length, payload. Reads run on their own
     /// thread; writes go through a queue so a slow peer (e.g. while receiving a save file) never blocks
-    /// the session thread.
+    /// the session thread. Only a client's link to its host takes save-sized messages, a big message is
+    /// read as it arrives (nothing is set aside for a length a peer merely claims), and a peer that stops
+    /// reading is dropped rather than buffered for.
     /// </summary>
     sealed class Connection : IDisposable
     {
         public const int MaxSmall = 64 * 1024;
-        public const int MaxFile = 64 * 1024 * 1024;
+        public const int MaxFile = 48 * 1024 * 1024;       // a save (Half-Life: Alyx's are 5-15 MB)
+        const long MaxQueued = 160L * 1024 * 1024;
 
         readonly TcpClient tcp;
         readonly NetworkStream stream;
         readonly BlockingCollection<byte[]> outbox = new BlockingCollection<byte[]>();
         int closed;
+        long queued;
+
+        /// <summary>Whether save files may arrive on this connection (set on a client's link to its host).</summary>
+        public bool AcceptFiles { get; set; }
 
         public event Action<Connection, Msg, byte[]> Received;
         public event Action<Connection> Closed;
@@ -81,11 +93,9 @@ namespace AlyxMP
                     ReadExact(header, 5);
                     var type = (Msg)header[0];
                     int len = BitConverter.ToInt32(header, 1);
-                    int max = type == Msg.SyncData || type == Msg.SyncMap ? MaxFile : MaxSmall;
+                    int max = (type == Msg.SyncData || type == Msg.SyncMap) && AcceptFiles ? MaxFile : MaxSmall;
                     if (len < 0 || len > max) throw new InvalidDataException("oversized message");
-                    var body = new byte[len];
-                    ReadExact(body, len);
-                    Received?.Invoke(this, type, body);
+                    Received?.Invoke(this, type, ReadBody(len));
                 }
             }
             catch (Exception) { }
@@ -97,10 +107,35 @@ namespace AlyxMP
             try
             {
                 foreach (var packet in outbox.GetConsumingEnumerable())
+                {
                     stream.Write(packet, 0, packet.Length);
+                    Interlocked.Add(ref queued, -packet.Length);
+                }
             }
             catch (Exception) { }
             finally { Close(); }
+        }
+
+        byte[] ReadBody(int len)
+        {
+            if (len <= MaxSmall)
+            {
+                var body = new byte[len];
+                ReadExact(body, len);
+                return body;
+            }
+            using (var ms = new MemoryStream())
+            {
+                var chunk = new byte[MaxSmall];
+                for (int left = len; left > 0;)
+                {
+                    int n = stream.Read(chunk, 0, Math.Min(chunk.Length, left));
+                    if (n <= 0) throw new EndOfStreamException();
+                    ms.Write(chunk, 0, n);
+                    left -= n;
+                }
+                return ms.ToArray();
+            }
         }
 
         void ReadExact(byte[] buf, int count)
@@ -121,6 +156,11 @@ namespace AlyxMP
             packet[0] = (byte)type;
             BitConverter.GetBytes(payload.Length).CopyTo(packet, 1);
             Buffer.BlockCopy(payload, 0, packet, 5, payload.Length);
+            if (Interlocked.Add(ref queued, packet.Length) > MaxQueued)
+            {
+                Close();       // it isn't reading what we send
+                return;
+            }
             try { outbox.Add(packet); } catch (InvalidOperationException) { }
         }
 
@@ -181,6 +221,75 @@ namespace AlyxMP
         /// <summary>World-sync payloads go into console commands as-is, so only plain tokens are allowed.</summary>
         public static string World(string s) => s != null && WorldRx.IsMatch(s) && !s.Contains("//") ? s : null;
 
+        // an entity as the mod names it: its own name or a hash (a spawner's enemies: hash#n), and where it
+        // was first seen
+        static readonly Regex RefRx = new Regex(@"^(=[A-Za-z0-9_\-.]{1,64}|[0-9a-f]{1,8}(?:#\d{1,6})?)@(-?\d{1,6}),(-?\d{1,6}),(-?\d{1,6})$");
+        static readonly Regex OutputRx = new Regex(@"^On[A-Za-z0-9_]{1,48}$");
+        public const double MaxGuestDamage = 400;
+
+        static bool Nums(string[] a, int from, int count, out double[] v)
+        {
+            v = new double[count];
+            if (a.Length < from + count) return false;
+            for (int i = 0; i < count; i++) if (!Num(a[from + i], out v[i])) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// A world message as a guest may send it: one of the kinds players cause (moving, picking up,
+        /// breaking, using, killing, hurting, shooting), with exactly its fields. The host's own enemy
+        /// updates (nh, np, ne) and catch-up replays (J) never come from a guest. `where` gets the spot the
+        /// message is about (an entity's first sighting, or the position it gives), for range checks.
+        /// </summary>
+        public static string GuestWorld(string s, out double[] where)
+        {
+            where = null;
+            s = World(s);
+            if (s == null) return null;
+            var a = s.Split(' ');
+            double[] v;
+            Match m = a.Length > 1 ? RefRx.Match(a[1]) : Match.Empty;
+            if (m.Success)
+                where = new[] { double.Parse(m.Groups[2].Value, Inv), double.Parse(m.Groups[3].Value, Inv), double.Parse(m.Groups[4].Value, Inv) };
+            switch (a[0])
+            {
+                case "p":
+                case "pr":
+                    if (a.Length != 8 || !m.Success || !Nums(a, 2, 6, out v)) return null;
+                    where = new[] { v[0], v[1], v[2] };
+                    return s;
+                case "pg":
+                case "bk":
+                case "tg":
+                case "us":
+                    return a.Length == 2 && m.Success ? s : null;
+                case "kd":
+                    if (a.Length != 5 || !m.Success || !Nums(a, 2, 3, out v)) return null;
+                    where = v;
+                    return s;
+                case "io":
+                    return a.Length == 3 && m.Success && OutputRx.IsMatch(a[2]) ? s : null;
+                case "ai":
+                    return a.Length == 4 && m.Success && Nums(a, 2, 1, out _) && (a[3] == "-" || Nums(a, 3, 1, out _)) ? s : null;
+                case "nd":
+                    if (a.Length != 6 || !m.Success || !Nums(a, 2, 4, out v) || v[0] <= 0 || v[0] > MaxGuestDamage) return null;
+                    where = new[] { v[1], v[2], v[3] };
+                    return s;
+                case "sh":
+                    if (a.Length != 9 || !Nums(a, 1, 8, out v) || v[0] < 0 || v[0] > 3) return null;
+                    where = new[] { v[1], v[2], v[3] };
+                    return s;
+            }
+            return null;
+        }
+
+        /// <summary>The host's own enemy updates and audits; a guest only takes them from the host.</summary>
+        public static bool HostOnlyWorld(string s)
+        {
+            var kind = s.Length > 2 && s[2] == ' ' ? s.Substring(0, 2) : "";
+            return kind == "nh" || kind == "np" || kind == "ne" || kind == "na" || kind == "pa";
+        }
+
         public static string Zone(string s) => s == "-" || (s != null && ZoneRx.IsMatch(s)) ? s : null;
 
         static bool Num(string s, out double v) =>
@@ -216,6 +325,70 @@ namespace AlyxMP
         }
 
         public static string F(double v) => v.ToString("0.###", Inv);
+    }
+
+    /// <summary>At most `rate` messages a second on average, in bursts of up to `burst` (any thread but one).</summary>
+    sealed class Bucket
+    {
+        readonly double rate, burst;
+        double tokens;
+        long last = Stopwatch.GetTimestamp();
+
+        public Bucket(double rate, double burst)
+        {
+            this.rate = rate;
+            this.burst = burst;
+            tokens = burst;
+        }
+
+        public bool Take()
+        {
+            long now = Stopwatch.GetTimestamp();
+            tokens = Math.Min(burst, tokens + (now - last) * rate / Stopwatch.Frequency);
+            last = now;
+            if (tokens < 1) return false;
+            tokens -= 1;
+            return true;
+        }
+    }
+
+    /// <summary>Joining needs the host's join code (and password, if any), proven without sending it.</summary>
+    static class JoinProof
+    {
+        const string CodeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+        /// <summary>A fresh code for a hosting session: 6 characters that read unambiguously.</summary>
+        public static string NewCode()
+        {
+            var bytes = new byte[6];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create()) rng.GetBytes(bytes);
+            var sb = new StringBuilder();
+            foreach (var b in bytes) sb.Append(CodeChars[b % CodeChars.Length]);
+            return sb.ToString();
+        }
+
+        public static string NewNonce()
+        {
+            var bytes = new byte[16];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create()) rng.GetBytes(bytes);
+            return BitConverter.ToString(bytes).Replace("-", "");
+        }
+
+        public static string Proof(string code, string password, string nonce, int proto)
+        {
+            var key = Encoding.UTF8.GetBytes((code ?? "").Trim().ToUpperInvariant() + "\n" + (password ?? ""));
+            using (var h = new System.Security.Cryptography.HMACSHA256(key))
+                return BitConverter.ToString(h.ComputeHash(Encoding.UTF8.GetBytes(nonce + "\n" + proto))).Replace("-", "");
+        }
+
+        /// <summary>Compares without giving away how much matched.</summary>
+        public static bool Same(string a, string b)
+        {
+            if (a == null || b == null || a.Length != b.Length) return false;
+            int diff = 0;
+            for (int i = 0; i < a.Length; i++) diff |= a[i] ^ b[i];
+            return diff == 0;
+        }
     }
 
     sealed class PlayerState

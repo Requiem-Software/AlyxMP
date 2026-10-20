@@ -50,6 +50,7 @@ namespace AlyxMP
         readonly MenuKeys menuKeys;
         int mappedPort;
         string shareAddress;
+        string joinCode;
         bool suppressAutoLaunch;
 
         // updates (Updater)
@@ -95,8 +96,20 @@ namespace AlyxMP
             {
                 if (settings.SetFromGame(key, value) && key == "autoreload") OnSettingChanged(key);
             });
+            // the in-game menu's buttons: the same as the ones here
+            game.MenuAction += act => Ui(() =>
+            {
+                switch (act)
+                {
+                    case "save": session.SaveGame(); break;
+                    case "syncall":
+                    case "resync": session.Resync(); break;
+                    case "stophost":
+                    case "leave": if (session.Active) LeaveSession(); break;
+                }
+            });
 
-            AddLog($"Alyx MP {ModFiles.Version} - Half-Life: Alyx at {hla}", Theme.Muted);
+            AddLog($"Alyx MP {ModFiles.Label} - Half-Life: Alyx at {hla}", Theme.Muted);
             if (!ModFiles.ModInstalled(hla))
                 AddLog("The mod's game files are missing. Run AlyxMP-Setup.exe again.", Theme.Bad);
             if (!ModFiles.NoVRInstalled(hla))
@@ -158,9 +171,9 @@ namespace AlyxMP
         {
             var title = Theme.Label("ALYX MULTIPLAYER", Theme.Title, Theme.Accent);
             title.Location = new Point(18, 10);
-            var version = Theme.Label("v" + ModFiles.Version, Theme.Ui, Theme.Muted);
+            var version = Theme.Label("v" + ModFiles.Label, Theme.Ui, Theme.Muted);
             version.Location = new Point(400, 32);
-            updatesLink.Location = new Point(452, 32);
+            updatesLink.Location = new Point(version.Left + version.PreferredWidth + 6, 32);
             StyleLink(updatesLink);
             updatesLink.LinkClicked += (s, e) => ShowUpdates();
             Controls.Add(updatesLink);
@@ -333,7 +346,8 @@ namespace AlyxMP
                 return;
             }
             SaveSettings();
-            session.Host(nameBox.Text, port, hostPwBox.Text);
+            joinCode = JoinProof.NewCode();
+            session.Host(nameBox.Text, port, hostPwBox.Text, joinCode);
             var lan = Upnp.LocalIp();
             ShowShare($"{lan}:{port}", IsPrivate(lan) ? "Same network: " : "Friends join with: ");
             if (upnpCheck.Checked)
@@ -376,8 +390,9 @@ namespace AlyxMP
 
         void ShowShare(string address, string prefix)
         {
-            shareAddress = address;
-            shareLabel.Text = prefix + address;
+            // the join code goes with the address: without it nobody gets in
+            shareAddress = joinCode != null ? address + "#" + joinCode : address;
+            shareLabel.Text = prefix + shareAddress;
             copyButton.Visible = true;
         }
 
@@ -427,6 +442,7 @@ namespace AlyxMP
             }
             shareLabel.Text = "";
             shareAddress = null;
+            joinCode = null;
             copyButton.Visible = false;
             publicIpLink.Visible = false;
         }
@@ -607,7 +623,7 @@ namespace AlyxMP
             else SetStatus(gameStatus, "Game: " + game.Map, Theme.Good);
 
             if (!game.Connected) SetStatus(modStatus, "Mod: -", Theme.Muted);
-            else if (game.ModReady) SetStatus(modStatus, "Mod: loaded " + game.ModVersion, Theme.Good);
+            else if (game.ModReady) SetStatus(modStatus, "Mod: loaded " + (game.ModVersion == ModFiles.Version ? ModFiles.Label : game.ModVersion), Theme.Good);
             else SetStatus(modStatus, "Mod: loading...", Theme.Text);
 
             SetStatus(sessionStatus, session.Status, session.Active ? Theme.Good : Theme.Muted);
@@ -648,8 +664,16 @@ namespace AlyxMP
             if (label.ForeColor != color) label.ForeColor = color;
         }
 
-        void AddLog(string text, Color color) =>
-            Theme.AppendLine(logBox, DateTime.Now.ToString("HH:mm:ss  ") + text, color);
+        // (development: set ALYXMP_LOG to a file path and the log is written there too)
+        static readonly string DevLog = Environment.GetEnvironmentVariable("ALYXMP_LOG");
+
+        void AddLog(string text, Color color)
+        {
+            var line = DateTime.Now.ToString("HH:mm:ss  ") + text;
+            Theme.AppendLine(logBox, line, color);
+            if (string.IsNullOrEmpty(DevLog)) return;
+            try { System.IO.File.AppendAllText(DevLog, line + Environment.NewLine); } catch (Exception) { }
+        }
 
         void Ui(Action a)
         {

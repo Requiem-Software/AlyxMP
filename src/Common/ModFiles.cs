@@ -13,7 +13,9 @@ namespace AlyxMP
     /// </summary>
     static class ModFiles
     {
-        public const string Version = "0.6.0";
+        public const string Version = "0.6.1";
+        /// <summary>The version as the launcher and setup show it (update checks use the number above).</summary>
+        public const string Label = Version + " Beta";
         public const string HookLine = "script_reload_code alyxmp/main";
         public const string NoVRHookLine = "script_reload_code novr";
         public const string NoVRZipUrl = "https://github.com/HLANoVR/HLA-NoVR/archive/refs/heads/main.zip";
